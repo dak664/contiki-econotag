@@ -58,16 +58,24 @@
 #endif
 
 #define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
 
 void rtc_isr(void) {
+DEBUGFLOW('i');
 	PRINTF("rtc_wu_irq\n\r");
 	PRINTF("now is %u\n", rtimer_arch_now());
 	disable_rtc_wu();
 	disable_rtc_wu_irq();
 	rtimer_run_next();
 	clear_rtc_wu_evt();
+DEBUGFLOW('x');
 }
-
+volatile uint32_t rtimertime1,rtimertime2;
 void
 rtimer_arch_init(void)
 {
@@ -78,10 +86,15 @@ rtimer_arch_init(void)
 void
 rtimer_arch_schedule(rtimer_clock_t t)
 {
+DEBUGFLOW('s');
 	volatile uint32_t now;
 	now = rtimer_arch_now();
 	PRINTF("rtimer_arch_schedule time %u; now is %u\n", t,now);
-
+ if (!rtimertime1) {
+	rtimertime1=t-now;
+} else {
+	rtimertime2=t-now;
+ }
 #if 1
 /* If specified time is always in the future, counter can wrap without harm */
 	*CRM_RTC_TIMEOUT = t - now;

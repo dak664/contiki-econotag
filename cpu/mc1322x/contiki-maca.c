@@ -54,6 +54,12 @@
 #endif
 
 #define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
 
 #ifndef CONTIKI_MACA_PREPEND_BYTE
 #define CONTIKI_MACA_PREPEND_BYTE 0xff
@@ -128,15 +134,25 @@ int contiki_maca_pending_packet(void) {
 }
 
 int contiki_maca_on_request(void) {
+#if 1
+DEBUGFLOW('+');
+	return 1;
+#else
 	contiki_maca_request_on = 1;
 	contiki_maca_request_off = 0;
 	return 1;
+#endif
 }
 
 int contiki_maca_off_request(void) {
+#if 1
+DEBUGFLOW('-');
+	return 1;
+#else
 	contiki_maca_request_on = 0;
 	contiki_maca_request_off = 1;
 	return 1;
+#endif
 }
 
 /* it appears that the mc1332x radio cannot */

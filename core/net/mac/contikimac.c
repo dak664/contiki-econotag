@@ -164,7 +164,7 @@ static volatile uint8_t contikimac_keep_radio_on = 0;
 static volatile unsigned char we_are_sending = 0;
 static volatile unsigned char radio_is_on = 0;
 
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)
@@ -175,6 +175,12 @@ static volatile unsigned char radio_is_on = 0;
 #endif
 
 #define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
 
 /* Flag that is used to keep track of whether or not we are snooping
    for announcements from neighbors. */
@@ -255,8 +261,9 @@ schedule_powercycle(struct rtimer *t, rtimer_clock_t time)
   int r;
 
   if(contikimac_is_on) {
-
+DEBUGFLOW('X');
     if(RTIMER_CLOCK_LT(RTIMER_TIME(t) + time, RTIMER_NOW() + 2)) {
+	DEBUGFLOW('2');
       time = RTIMER_NOW() - RTIMER_TIME(t) + 2;
     }
 
@@ -274,8 +281,9 @@ schedule_powercycle_fixed(struct rtimer *t, rtimer_clock_t fixed_time)
   int r;
 
   if(contikimac_is_on) {
-
+DEBUGFLOW('Y');
     if(RTIMER_CLOCK_LT(fixed_time, RTIMER_NOW() + 1)) {
+	DEBUGFLOW('1');
       fixed_time = RTIMER_NOW() + 1;
     }
 
@@ -325,6 +333,7 @@ powercycle(struct rtimer *t, void *ptr)
     static uint8_t count;
 
 //  cycle_start += CYCLE_TIME;  //once everything is working
+    DEBUGFLOW('P');DEBUGFLOW('W');
     cycle_start = RTIMER_NOW();  //Allows missing a cycle without screwup
 
 
@@ -349,12 +358,15 @@ powercycle(struct rtimer *t, void *ptr)
              the radio medium to make sure that we wasn't woken up by a
              false positive: a spurious radio interference that was not
              caused by an incoming packet. */
+		  DEBUGFLOW('?');
           if(NETSTACK_RADIO.channel_clear() == 0) {
+		  DEBUGFLOW('!');
             packet_seen = 1;
             break;
           }
           powercycle_turn_radio_off();
         }
+		DEBUGFLOW('Q');
         schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_SLEEP_TIME);
         PT_YIELD(&pt);
       }
@@ -400,7 +412,7 @@ powercycle(struct rtimer *t, void *ptr)
           if(NETSTACK_RADIO.pending_packet()) {
             break;
           }
-          
+      		DEBUGFLOW('R');    
           schedule_powercycle(t, CCA_CHECK_TIME + CCA_SLEEP_TIME);
           PT_YIELD(&pt);
         }
@@ -417,6 +429,7 @@ powercycle(struct rtimer *t, void *ptr)
             RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 8));
 
     if(RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 4)) {
+			DEBUGFLOW('S');
       schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
       PT_YIELD(&pt);
     }
@@ -863,6 +876,7 @@ init(void)
 {
   radio_is_on = 0;
   PT_INIT(&pt);
+  DEBUGFLOW('I');DEBUGFLOW('N');DEBUGFLOW('I');DEBUGFLOW('T');
   rtimer_set(&rt, RTIMER_NOW() + CYCLE_TIME, 1,
              (void (*)(struct rtimer *, void *))powercycle, NULL);
 
@@ -877,9 +891,11 @@ init(void)
 static int
 turn_on(void)
 {
+	DEBUGFLOW('O');
   if(contikimac_is_on == 0) {
     contikimac_is_on = 1;
     contikimac_keep_radio_on = 0;
+	DEBUGFLOW('G');
     rtimer_set(&rt, RTIMER_NOW() + CYCLE_TIME, 1,
                (void (*)(struct rtimer *, void *))powercycle, NULL);
   }
@@ -889,12 +905,15 @@ turn_on(void)
 static int
 turn_off(int keep_radio_on)
 {
+DEBUGFLOW('F');
   contikimac_is_on = 0;
   contikimac_keep_radio_on = keep_radio_on;
   if(keep_radio_on) {
     radio_is_on = 1;
+	DEBUGFLOW('F');
     return NETSTACK_RADIO.on();
   } else {
+  	DEBUGFLOW('G');
     radio_is_on = 0;
     return NETSTACK_RADIO.off();
   }

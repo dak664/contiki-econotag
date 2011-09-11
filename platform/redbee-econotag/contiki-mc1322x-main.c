@@ -100,6 +100,9 @@ void rtimercycle(void) {rtimerflag=1;}
 #define DEBUGFLOWSIZE 128
 #if DEBUGFLOWSIZE
 uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
 #endif
 
 #ifndef RIMEADDR_NVM
@@ -549,15 +552,28 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 			  uart1_input_handler(uart1_getc());
 		  }
 	  }
-	         
+	  DEBUGFLOW('M');     
 	  process_run();
 
 #if DEBUGFLOWSIZE
 	  if (debugflowsize) {
-		  debugflow[debugflowsize]=0;
-		  printf("%s\n",debugflow);
+	      if ((debugflowsize==1) && (debugflow[0]=='M')) {
+		    //nothing happened this cycle
+		  } else {
+		    debugflow[debugflowsize]=0;
+		    printf("%s\n",debugflow);
+		  }
 		  debugflowsize=0;
 	  }
+	  extern volatile uint32_t rtimertime1,rtimertime2;
+	  if (rtimertime1) {
+	    printf("t1=%u\n",rtimertime1);
+		rtimertime1=0;
+	  }
+	  if (rtimertime2) {
+	    printf("t1=%u\n",rtimertime2);
+		rtimertime2=0;
+	  }	  
 #endif
 
 #if PERIODICPRINTS

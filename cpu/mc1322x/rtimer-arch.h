@@ -53,7 +53,8 @@
 #if USE_32KHZ_XTAL
 #define RTIMER_ARCH_SECOND 32768
 #else
-#define RTIMER_ARCH_SECOND 18778 /* close --- should get calibrated */
+//#define RTIMER_ARCH_SECOND 18778 /* close --- should get calibrated */
+#define RTIMER_ARCH_SECOND 200000 /* for liesurly debugging */
 #endif
 
 #define rtimer_arch_now() (*CRM_RTC_COUNT)
