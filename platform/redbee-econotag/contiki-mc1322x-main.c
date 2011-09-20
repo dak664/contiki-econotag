@@ -67,21 +67,78 @@
 #include "contiki-maca.h"
 #include "contiki-uart.h"
 
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
+ extern void maca_off(void);
+ extern void maca_on(void);
 /* Get periodic prints from idle loop, from clock seconds or rtimer interrupts */
 /* Use of rtimer will conflict with other rtimer interrupts such as contikimac radio cycling */
-#define PERIODICPRINTS 0
+#define PERIODICPRINTS 1
 #if PERIODICPRINTS
 //#define PINGS 64
-#define ROUTES 300
-#define STAMPS 60
-#define STACKMONITOR 600
+#define ROUTES 3000
+#define STAMPS 400
+#define STACKMONITOR 6000
 //#define HEAPMONITOR 60
 uint16_t clocktime;
-#define TESTRTIMER 0
+#define TESTRTIMER 1
 #if TESTRTIMER
-uint8_t rtimerflag=1;
+uint8_t rtimerflag=1,macaflag;
+volatile uint32_t theregister[20];
 struct rtimer rt;
-void rtimercycle(void) {rtimerflag=1;}
+extern uint8_t cca(void);
+volatile uint8_t entry;
+void rtimercycle(void) {
+volatile int i,j;
+DEBUGFLOW('i');
+if (entry) {DEBUGFLOW('E');DEBUGFLOW('0'+entry);}
+entry++;
+if (macaflag) {
+ //  maca_off();
+  DEBUGFLOW('+');
+maca_on();
+ for (i=0;i<100;i++) {if (cca()==0) {DEBUGFLOW('X');DEBUGFLOW('X');} for (j=0;j<5000;j++) {}}
+ // for (i=0;i<20;i++) {
+ // theregister[i]=RTIMER_NOW();
+ //   theregister[i]=*((volatile uint32_t *)(0x80009490))&0xff;
+ // 	for (j=0;j<147;j++) {}  // ~100 microseconds
+//	for (j=0;j<1478;j++) {}  // 19rtimer ticks = 1.01 msec
+//	for (j=0;j<14780;j++) {}  // 10msec
+//	for (j=0;j<10000;j++) {}  //127 rtimer ticks = 6.76 msec
+//	for (j=0;j<100000;j++) {}  //1270 rtimer ticks 67.6 msec
+ // }
+ // for (i=9;i>0;i--) {
+ //  theregister[i]=theregister[i]-theregister[i-1];
+  // }
+ // for (i=0;i<10;i++) {if (cca()==0) {DEBUGFLOW('X');DEBUGFLOW('X');} for (j=0;j<100;j++) {}}
+ // for (i=5;i<10;i++) {theregister[i]=*((volatile uint32_t *)(0x80009490))&0xff;for (j=0;j<10000;j++) {}}
+
+ } else {
+  // for (i=0;i<20;i++) {
+  //   theregister[i]=*((volatile uint32_t *)(0x80009490))&0xff;
+ // 	for (j=0;j<147;j++) {}  // ~100 microseconds
+//	for (j=0;j<1478;j++) {}  // 19rtimer ticks = 1.01 msec
+//	}
+ //maca_off();
+ // for (i=0;i<5;i++) {theregister[i]=*((volatile uint32_t *)(0x80009490))&0xff;for (j=0;j<100;j++) {}}
+ // for (i=0;i<10;i++) {if (cca()==0) {DEBUGFLOW('Y');DEBUGFLOW('Y');} for (j=0;j<100;j++) {}}
+ // for (i=5;i<10;i++) {theregister[i]=*((volatile uint32_t *)(0x80009490))&0xff;for (j=0;j<100;j++) {}}
+
+   DEBUGFLOW('-');
+   maca_off();
+ }
+macaflag=!macaflag;
+rtimer_set(&rt, RTIMER_NOW()+ RTIMER_ARCH_SECOND/2, 1,(void *) rtimercycle, NULL);
+DEBUGFLOW('\n');
+
+rtimerflag=1;
+entry--;
+}
 #endif
 #endif
 
@@ -206,7 +263,13 @@ init_lowlevel(void)
 	maca_init();
 
         //make maca a fast interrupt
-	*((volatile uint32_t *) (0x80020014)) = (1 << 7);
+	*((volatile uint32_t *) (0x80020014)) = (1 << 7);  //maca fast
+//	*((volatile uint32_t *) (0x80020014)) = (1 << 7)|(1 << 4);  //maca, crm fast
+//	*((volatile uint32_t *) (0x80020014)) = (1 << 5); //timer fast
+//		*((volatile uint32_t *) (0x80020014)) = 0x86; //maca, uarts
+//*((volatile uint32_t *) (0x80020014))=0x3df; //all interrupts fast except timer - doesnt like fast crm
+
+	
 
 	set_channel(RF_CHANNEL - 11); /* channel 11 */
 	set_power(0x12); /* 0x12 is the highest, not documented */
@@ -382,16 +445,15 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	clock_init();	
 
 	/* LED driver */
-//	leds_init();
+	leds_init();
 
 	/* control TX_ON with the radio */
-	GPIO->FUNC_SEL.GPIO_44 = 2;
+	GPIO->FUNC_SEL.GPIO_44 = 1;  //red led on during xmit
 	GPIO->PAD_DIR.GPIO_44 = 1;
 
-//	GPIO->FUNC_SEL.GPIO_45 = 3;
+	GPIO->FUNC_SEL.GPIO_45 = 2;  //green led on during rx
 	GPIO->PAD_DIR.GPIO_45 = 1;
-	GPIO->DATA_RESET.GPIO_45 = 1;
-
+#if 0
 	/* debug io */
 	GPIO->PAD_DIR_SET.GPIO_43 = 1;
 	GPIO->DATA_RESET.GPIO_43 = 1;
@@ -401,7 +463,7 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 
 	GPIO->PAD_DIR_SET.GPIO_06 = 1;
 	GPIO->DATA_RESET.GPIO_06 = 1;
-
+#endif
 	/* Process subsystem */
 	process_init();
 	process_start(&etimer_process, NULL);
@@ -458,7 +520,7 @@ uint32_t p=(uint32_t)&__heap_end__-4;
   if(1) {
     uip_ipaddr_t ipaddr;
     int i;
-    uip_ip6addr(&ipaddr, 0xaaaa, 0, 0, 0, 0, 0, 0, 0);
+    uip_ip6addr(&ipaddr, 0xcccc, 0, 0, 0, 0, 0, 0, 0);
     uip_ds6_set_addr_iid(&ipaddr, &uip_lladdr);
     uip_ds6_addr_add(&ipaddr, 0, ADDR_TENTATIVE);
     printf("Tentative global IPv6 address ");
@@ -499,9 +561,9 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	  addr.u8[7];
   mac_lo = *MACA_MAC64LO;
   mac_hi = *MACA_MAC64HI;
-  PRINTF("setting panid 0x%04x\n\r", *MACA_MACPANID);
-  PRINTF("setting short mac 0x%04x\n\r", *MACA_MAC16ADDR);
-  PRINTF("setting long mac 0x%08x_%08x\n\r", *MACA_MAC64HI, *MACA_MAC64LO);
+  printf("setting panid 0x%04x\n\r", *MACA_MACPANID);
+  printf("setting short mac 0x%04x\n\r", *MACA_MAC16ADDR);
+  printf("setting long mac 0x%08x_%08x\n\r", *MACA_MAC64HI, *MACA_MAC64LO);
 
 #if MACA_AUTOACK
   set_prm_mode(AUTOACK);
@@ -550,14 +612,16 @@ uint32_t p=(uint32_t)&__heap_end__-4;
   print_processes(autostart_processes);
   autostart_start(autostart_processes);
  
+ 
+
+ //maca_off();
+ //maca_on();
+ // NETSTACK_RDC.off(1); //turn off RDC for testing
+ //	        rtimer_set(&rt, RTIMER_NOW()+ RTIMER_ARCH_SECOND*4, 1,(void *) rtimercycle, NULL); 
   /* Main scheduler loop */
   while(1) {
-	  volatile uint8_t i;
 	  check_maca();
-
-//	  cca();
-//	  for (i=1;i<10;i++) { cca();}
-
+//if ( ((*((volatile uint32_t *)(0x80009490))&0xff)>100 ) && ((*((volatile uint32_t *)(0x80009490))&0xff)<200 ) ) printf("H");
 #if (USE_WDT == 1)
 	  cop_service();
 #endif
@@ -570,6 +634,28 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	         
 	  process_run();
 
+#if DEBUGFLOWSIZE
+	  if (debugflowsize) {
+		  debugflow[debugflowsize]=0;
+		  printf("%s",debugflow);
+		  debugflowsize=0;
+		  printf("\n");
+	  }
+#endif
+{
+int i;
+//for (i=1;i<10;i++) {
+//if (!macaflag) 
+ //   if (cca()==0) {DEBUGFLOW('Z');DEBUGFLOW('Z');}
+//}
+}
+#if 0
+if (theregister[0]) {
+for (i=0;i<20;i++) printf("%u ",theregister[i]);
+printf("\n");
+for (i=0;i<20;i++) theregister[i]=0;
+}
+#endif
 #if PERIODICPRINTS
 #if TESTRTIMER
 /* Timeout can be increased up to 8 seconds maximum.
@@ -577,7 +663,8 @@ uint32_t p=(uint32_t)&__heap_end__-4;
  * The triggers are staggered to avoid printing everything at once.
  */
     if (rtimerflag) {
-      rtimer_set(&rt, RTIMER_NOW()+ RTIMER_ARCH_SECOND*1UL, 1,(void *) rtimercycle, NULL);
+  //    rtimer_set(&rt, RTIMER_NOW()+ RTIMER_ARCH_SECOND*1UL, 1,(void *) rtimercycle, NULL);
+	 //       rtimer_set(&rt, RTIMER_NOW()+ RTIMER_ARCH_SECOND/20, 1,(void *) rtimercycle, NULL);
       rtimerflag=0;
 #else
   if (clocktime!=clock_seconds()) {

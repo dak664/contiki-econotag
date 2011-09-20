@@ -131,7 +131,7 @@ int contiki_maca_on_request(void) {
 
 int contiki_maca_off_request(void) {
 	GPIO->DATA_RESET.GPIO_04 = 1;
-//	maca_off();
+	maca_off();
 	return 1;
 }
 

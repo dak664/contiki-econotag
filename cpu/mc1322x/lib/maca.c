@@ -45,6 +45,14 @@
 #define PRINTF(...) printf(__VA_ARGS__)
 #endif
 
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
+
 #ifndef MACA_BOUND_CHECK
 #define MACA_BOUND_CHECK 0
 #endif
@@ -352,7 +360,7 @@ volatile packet_t* get_free_packet(void) {
 }
 
 void post_receive(void) {
-	GPIO->DATA_SET.GPIO_45 = 1;
+//	GPIO->DATA_SET.GPIO_45 = 1;
 	last_post = RX_POST;
 	last_post_time = *MACA_CLK;
 	/* this sets the rxlen field */
@@ -417,7 +425,7 @@ volatile packet_t* rx_packet(void) {
 
 void post_cca(void) 
 {
-	GPIO->DATA_RESET.GPIO_45 = 1;
+//	GPIO->DATA_RESET.GPIO_45 = 1;
 	GPIO->DATA_SET.GPIO_43 = 1;
 	disable_irq(MACA);	
 	last_post = CCA_POST;
@@ -443,7 +451,7 @@ void post_cca(void)
 void post_tx(void) {
 	/* set dma tx pointer to the payload */
 	/* and set the tx len */
-	GPIO->DATA_RESET.GPIO_45 = 1;
+//	GPIO->DATA_RESET.GPIO_45 = 1;
 	disable_irq(MACA);
 	last_post = TX_POST;
 	last_post_time = *MACA_CLK;
@@ -476,11 +484,11 @@ void post_tx(void) {
 	*MACA_TMREN = (1 << maca_tmren_cpl);
 	
 	enable_irq(MACA);
-//	*MACA_CONTROL = ( ( 4 << PRECOUNT) |
-//			  ( prm_mode << PRM) |
-//			  (maca_ctrl_mode_no_cca << maca_ctrl_mode) |
-//			  (1 << maca_ctrl_asap) |
-//			  (maca_ctrl_seq_tx));	
+	*MACA_CONTROL = ( ( 4 << PRECOUNT) |
+			  ( prm_mode << PRM) |
+			  (maca_ctrl_mode_no_cca << maca_ctrl_mode) |
+			  (1 << maca_ctrl_asap) |
+			  (maca_ctrl_seq_tx));	
 	/* status bit 10 is set immediately */
         /* then 11, 10, and 9 get set */ 
         /* they are cleared once we get back to maca_isr */ 
@@ -514,8 +522,10 @@ void tx_packet(volatile packet_t *p) {
 }
 
 uint8_t cca(void) {
-//	safe_irq_disable(MACA);
-	do_cca = 1;
+uint8_t busyret;
+//return;
+	safe_irq_disable(MACA);
+	do_cca = 1;maca_busy=0;
 
 	/* disable soft timeout clock */
 	/* disable start clock */
@@ -538,8 +548,20 @@ uint8_t cca(void) {
 			*MACA_SFTCLK = *MACA_CLK + 16;
 		}
 	}
-	while(*MACA_CLK < last_post_time + 32 + CLK_PER_BYTE) { continue; }
+//	while (*MACA_CLK < last_post_time + 32 + CLK_PER_BYTE) { continue; }
+		while (*MACA_CLK < last_post_time + 32 + CLK_PER_BYTE) { busyret=maca_busy;if (busyret) break; }
+		while (*MACA_CLK < last_post_time + 32 + CLK_PER_BYTE) { continue; }		
+//	while(*MACA_CLK < last_post_time + 64 + CLK_PER_BYTE) { continue; }
+//		while(*MACA_CLK < last_post_time + 320 + CLK_PER_BYTE) { continue; }//hangs
+if (maca_busy) DEBUGFLOW('Y');
+#if 1
+{
+maca_busy=0;
+return !busyret;
+}
+#else
 	return (!maca_busy);
+#endif
 }
 
 void free_all_packets(void) {
@@ -697,20 +719,44 @@ void decode_status(void) {
 void maca_isr(void) {
 
 //	print_packets("maca_isr");
+//DEBUGFLOW('I');
+	if (*MACA_IRQ == 0) {  //forced interrupt
+	  goto forced;
+	}
+//DEBUGFLOW('0'+*MACA_IRQ);
 	maca_entry++;
 
-	GPIO->DATA_RESET.GPIO_45 = 1;
-
+//	GPIO->DATA_RESET.GPIO_45 = 1;
+	if (((*MACA_STATUS) & 0xf) == 0x2) {
+	DEBUGFLOW('B');	DEBUGFLOW('U');	DEBUGFLOW('S');	DEBUGFLOW('Y');
+	}
 	if (bit_is_set(*MACA_STATUS, maca_status_ovr))
+		DEBUGFLOW('o');
 	{ PRINTF("maca overrun\n\r"); }
-	if (bit_is_set(*MACA_STATUS, maca_status_busy))
-	{ PRINTF("maca busy\n\r"); }
+//	if (bit_is_set(*MACA_STATUS, maca_status_busy))
+//		DEBUGFLOW('@');
+//	{ PRINTF("maca busy\n\r"); }
 	if (bit_is_set(*MACA_STATUS, maca_status_crc))
+		DEBUGFLOW('#');
 	{ PRINTF("maca crc error\n\r"); }
 	if (bit_is_set(*MACA_STATUS, maca_status_to))
+//		DEBUGFLOW('$');
 	{ PRINTF("maca timeout\n\r"); 	}
 
+	if (bit_is_set(*MACA_IRQ,maca_irq_rst)) {
+		DEBUGFLOW('%');
+//		ResumeMACASync();
+		*MACA_CLRIRQ = (1 << maca_irq_rst);
+		return;
+	}
+	if (bit_is_set(*MACA_IRQ,maca_irq_cm)) {
+	//	DEBUGFLOW('^');
+//		ResumeMACASync();
+		*MACA_CLRIRQ = (1 << maca_irq_cm);
+	//	return;
+}
 	if (data_indication_irq()) {
+	DEBUGFLOW('5');
 		*MACA_CLRIRQ = (1 << maca_irq_di);
 		dma_rx->length = *MACA_GETRXLVL - 2; /* packet length does not include FCS */
 		dma_rx->lqi = get_lqi();
@@ -728,25 +774,44 @@ void maca_isr(void) {
 
 		add_to_rx(dma_rx);
 		dma_rx = 0;
+#if 0 //
+				ResumeMACASync(); //
+				return;
+#endif
 	}
 	if (filter_failed_irq()) {
+		DEBUGFLOW('&');
 		PRINTF("maca filter failed\n\r");
 		ResumeMACASync();
 		*MACA_CLRIRQ = (1 << maca_irq_flt);
+	//	return;
 	}
 	if (checksum_failed_irq()) {
+		DEBUGFLOW('7');
 		PRINTF("maca checksum failed\n\r");
 		ResumeMACASync();
 		*MACA_CLRIRQ = (1 << maca_irq_crc);
+	//	return;
 	}
 	if (softclock_irq()) {
+//		DEBUGFLOW('8');
+
+//i+$^$c8cc8$^$cc8$^$c8cc8$^$cc8
+//i+cc8$^$c8cc8$^$cc8$^$cc8$^$c
+//i+d cdNdd8cdN c8d$^dNcdN c8d$^dNcdN c8d$^dNcdN c8d$^dNcdN
+
+
 		*MACA_CLRIRQ = (1 << maca_irq_sftclk);
+	//	return; //seems to make no difference
 	}
-	if (poll_irq()) {		
+	if (poll_irq()) {
+	DEBUGFLOW('9');	
 		*MACA_CLRIRQ = (1 << maca_irq_poll);
+	//	return;
 	}
 	if(action_complete_irq()) {
-
+//	DEBUGFLOW('d');
+			*MACA_CLRIRQ = (1 << maca_irq_acpl);
 		PRINTF("maca action complete %d\n\r", get_field(*MACA_CONTROL,SEQUENCE)); 
 		if(last_post == TX_POST) {
 			tx_head->status = get_field(*MACA_STATUS,CODE);
@@ -782,18 +847,20 @@ void maca_isr(void) {
 			last_post = NO_POST;
 		}
 
- 		if((last_post == CCA_POST)
-		   && (*MACA_CLK > last_post_time + 4))  
+ 		if((last_post == CCA_POST))
+	//	   && (*MACA_CLK > last_post_time + 4))  //take out?
 		{
 			last_post_time = *MACA_CLK;
 			GPIO->DATA_RESET.GPIO_43 = 1;
 			if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
 				GPIO->DATA_SET.GPIO_06 = 1;
-				maca_busy = 1;				
+				maca_busy = 1;		
+DEBUGFLOW('b');	DEBUGFLOW('u');	DEBUGFLOW('s');	DEBUGFLOW('y');				
 				last_post = NO_POST;
 			} else {
 				GPIO->DATA_RESET.GPIO_06 = 1;
 				maca_busy = 0;
+	//			DEBUGFLOW('n');	
 				last_post = NO_POST;
 			}
 		}
@@ -801,31 +868,36 @@ void maca_isr(void) {
 		ResumeMACASync();
 		*MACA_CLRIRQ = (1 << maca_irq_acpl);		
 	}
-
 	decode_status();
-
+#if 0
 	if (*MACA_IRQ != 0)
 	{ printf("*MACA_IRQ %x\n\r", (unsigned int)*MACA_IRQ); }
-
-
+#endif
+forced:
 	if(do_cca == 1) {
-                post_cca();
-                do_cca = 0;
-        } else if ((last_post != CCA_POST) && (last_post_time + 1024 < *MACA_CLK)) { 
-//if (last_post != CCA_POST &&
+//		DEBUGFLOW('c');
+        post_cca();
+        do_cca = 0;
+    } else if ((last_post != CCA_POST) && (last_post_time + 1024 < *MACA_CLK)) { 
+ //    } else if ((last_post != CCA_POST) ) { 
 
-                if(tx_head != 0) {
-                        post_tx();
+        if(tx_head != 0) {
+	//		DEBUGFLOW('t');
+             post_tx();
 		} else {
-                        post_receive();
+//			DEBUGFLOW('r');
+            post_receive();
 		}
-
 	} else if (last_post == NO_POST) {
 		/* nothing getting posted */
 		/* set a maca clock so that we come back eventually */
 		/* e.g. to post_receive */
-
-		*MACA_CPLCLK = *MACA_CLK + 32;
+//		DEBUGFLOW('z');
+	//	*MACA_CPLCLK = *MACA_CLK + 32;
+//								*MACA_CPLCLK = *MACA_CLK + 320;  //three $^ in half second
+//				*MACA_CPLCLK = *MACA_CLK + 700;  //a bunch
+						//		*MACA_CPLCLK = *MACA_CLK + 1200;  //sensible
+																*MACA_CPLCLK = *MACA_CLK + 1000;  //sensible
 		/* enable complete clock */
 		*MACA_TMREN = (1 << maca_tmren_cpl);
 	}
@@ -969,16 +1041,22 @@ const uint32_t addr_reg_rep[MAX_DATA] = { 0x80004118,0x80009204,0x80009208,0x800
 const uint32_t data_reg_rep[MAX_DATA] = { 0x00180012,0x00000605,0x00000504,0x00001111,0x0fc40000,0x20046000,0x4005580c,0x40075801,0x4005d801,0x5a45d800,0x4a45d800,0x40044000,0x00106000,0x00083806,0x00093807,0x0009b804,0x000db800,0x00093802,0x00000015,0x00000002,0x0000000f,0x0000aaa0,0x01002020,0x016800fe,0x8e578248,0x000000dd,0x00000946,0x0000035a,0x00100010,0x00000515,0x00397feb,0x00180358,0x00000455,0x00000001,0x00020003,0x00040014,0x00240034,0x00440144,0x02440344,0x04440544,0x0ee7fc00,0x00000082,0x0000002a };
 
 void maca_off(void) {
-	GPIO->DATA_RESET.GPIO_45 = 1;
+//DEBUGFLOW('f');
+	if (maca_pwr == 0) DEBUGFLOW('?');
+	if (maca_pwr == 0) return;
+//return;
+//	GPIO->DATA_RESET.GPIO_45 = 1;
 	disable_irq(MACA); // this line bad
 	/* turn off the radio regulators */
 	reg(0x80003048) =  0x00000f00;
 	/* hold the maca in reset */
-	maca_reset = maca_reset_rst;
+	maca_reset = maca_reset_rst; //if not held in reset the isr will get continuous action complete interrupts
 	maca_pwr = 0;
 }
 
 void maca_on(void) {
+//DEBUGFLOW('o');
+	if (maca_pwr != 0) DEBUGFLOW('<');
 	if (maca_pwr != 0) return;
 	/* turn the radio regulators back on */
 	reg(0x80003048) =  0x00000f78; 
@@ -987,7 +1065,27 @@ void maca_on(void) {
 	*MACA_CONTROL = maca_ctrl_seq_nop;
 	/* Clear all interrupts. */
 	*MACA_CLRIRQ = 0xffff;
+#if 0
 
+	//init_phy();
+
+	maca_pwr = 1;	//no pings missed if here
+
+//	*MACA_CLK=last_post_time;  //save maca clock for wakeup?
+
+//restore receive filters
+
+	set_channel(26 - 11); 
+	set_power(0x12); /* 0x12 is the highest, not documented */
+    *MACA_MACPANID = 0xcdab; /* this is the hardcoded contiki pan, register is PACKET order */
+    *MACA_MAC16ADDR = 0xffff; /* short addressing isn't used, set this to 0xffff for now */
+	*MACA_MAC64HI= mac_hi;
+	*MACA_MAC64LO = mac_lo;
+
+	enable_irq(MACA);
+	*INTFRC = (1 << INT_NUM_MACA);
+//	maca_pwr = 1;  //some pings missed if here
+#else
 	maca_pwr = 1;
 
 	*MACA_MACPANID = 0xcdab; /* this is the hardcoded contiki pan, register is
@@ -996,9 +1094,17 @@ void maca_on(void) {
 				     for now */
 	*MACA_MAC64HI= mac_hi;
 	*MACA_MAC64LO = mac_lo;
-
+//DEBUGFLOW('e');
 	enable_irq(MACA);
+//DEBUGFLOW('p');
+
+#if 1
 	*INTFRC = (1 << INT_NUM_MACA);
+#else
+	last_post_time = *MACA_CLK;
+	post_receive();
+#endif
+#endif
 }
 
 /* initialized with 0x4c */

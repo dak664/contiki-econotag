@@ -55,6 +55,19 @@
 
 #include <string.h>
 
+
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
+
+#define CONTIKIMAC_CONF_WITH_CONTIKIMAC_HEADER 0
+#define WITH_PHASE_OPTIMIZATION     0
+#define WITH_FAST_SLEEP              0
+
 #ifndef WITH_PHASE_OPTIMIZATION
 #define WITH_PHASE_OPTIMIZATION      1
 #endif
@@ -133,7 +146,8 @@ struct hdr {
 #define GUARD_TIME                         11 * CHECK_TIME
 
 /* INTER_PACKET_INTERVAL is the interval between two successive packet transmissions */
-#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 5000
+//#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 5000
+#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 50
 
 /* AFTER_ACK_DETECTECT_WAIT_TIME is the time to wait after a potential
    ACK packet has been detected until we can read it out from the
@@ -261,7 +275,8 @@ schedule_powercycle(struct rtimer *t, rtimer_clock_t time)
     r = rtimer_set(t, RTIMER_TIME(t) + time, 1,
                    (void (*)(struct rtimer *, void *))powercycle, NULL);
     if(r != RTIMER_OK) {
-      printf("schedule_powercycle: could not set rtimer\n");
+	DEBUGFLOW('A');
+ //     printf("schedule_powercycle: could not set rtimer\n");
     }
   }
 }
@@ -280,7 +295,8 @@ schedule_powercycle_fixed(struct rtimer *t, rtimer_clock_t fixed_time)
     r = rtimer_set(t, fixed_time, 1,
                    (void (*)(struct rtimer *, void *))powercycle, NULL);
     if(r != RTIMER_OK) {
-      printf("schedule_powercycle: could not set rtimer\n");
+		DEBUGFLOW('B');
+  //    printf("schedule_powercycle: could not set rtimer\n");
     }
   }
 }
@@ -322,7 +338,8 @@ powercycle(struct rtimer *t, void *ptr)
     static rtimer_clock_t t0;
     static uint8_t count;
 
-    cycle_start += CYCLE_TIME;
+   // cycle_start += CYCLE_TIME;
+	  cycle_start = RTIMER_NOW();
 
     if(WITH_STREAMING && is_streaming) {
       if(!RTIMER_CLOCK_LT(RTIMER_NOW(), stream_until)) {
@@ -339,6 +356,7 @@ powercycle(struct rtimer *t, void *ptr)
         t0 = RTIMER_NOW();
         if(we_are_sending == 0) {
           powercycle_turn_radio_on();
+		  while ((t0+CCA_CHECK_TIME) > RTIMER_NOW()) {continue;}  //temp delay for testing - dak
           /* Check if a packet is seen in the air. If so, we keep the
              radio on for a while (LISTEN_TIME_AFTER_PACKET_DETECTED) to
              be able to receive the packet. We also continuously check
@@ -346,6 +364,7 @@ powercycle(struct rtimer *t, void *ptr)
              false positive: a spurious radio interference that was not
              caused by an incoming packet. */
           if(NETSTACK_RADIO.channel_clear() == 0) {
+		  	DEBUGFLOW('S');
             packet_seen = 1;
             break;
           }
@@ -383,6 +402,7 @@ powercycle(struct rtimer *t, void *ptr)
             silence_periods = 0;
           }
           if(silence_periods > MAX_SILENCE_PERIODS) {
+	DEBUGFLOW('F');
             powercycle_turn_radio_off();
             break;
           }
@@ -390,10 +410,12 @@ powercycle(struct rtimer *t, void *ptr)
              periods > MAX_NONACTIVITY_PERIODS &&
              !(NETSTACK_RADIO.receiving_packet() ||
                NETSTACK_RADIO.pending_packet())) {
+			 	DEBUGFLOW('G');
             powercycle_turn_radio_off();
             break;
           }
           if(NETSTACK_RADIO.pending_packet()) {
+		  			   	DEBUGFLOW('P');
             break;
           }
           
@@ -405,6 +427,7 @@ powercycle(struct rtimer *t, void *ptr)
                NETSTACK_RADIO.pending_packet()) ||
              !RTIMER_CLOCK_LT(RTIMER_NOW(),
                               (start + LISTEN_TIME_AFTER_PACKET_DETECTED))) {
+	//						  				DEBUGFLOW('H');
             powercycle_turn_radio_off();
           }
         }
@@ -413,6 +436,7 @@ powercycle(struct rtimer *t, void *ptr)
             RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 8));
 
     if(RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 4)) {
+//	DEBUGFLOW('N');
       schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
       PT_YIELD(&pt);
     }
@@ -550,6 +574,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
   /* Make sure that the packet is longer or equal to the shortest
      packet length. */
   transmit_len = packetbuf_totlen();
+ #if 0
   if(transmit_len < SHORTEST_PACKET_SIZE) {
     /* Pad with zeroes */
     uint8_t *ptr;
@@ -559,7 +584,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
     PRINTF("contikimac: shorter than shortest (%d)\n", packetbuf_totlen());
     transmit_len = SHORTEST_PACKET_SIZE;
   }
-
+#endif
 
   packetbuf_compact();
 
@@ -625,6 +650,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       on();
       while(RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + CCA_CHECK_TIME)) { }
       if(NETSTACK_RADIO.channel_clear() == 0) {
+	DEBUGFLOW('B');
         collisions++;
         off();
         break;
@@ -670,6 +696,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       int ret;
 
       txtime = RTIMER_NOW();
+	//  printf("tx %d\n",transmit_len);
       ret = NETSTACK_RADIO.transmit(transmit_len);
 
       wt = RTIMER_NOW();
@@ -678,6 +705,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       if(!is_broadcast && (NETSTACK_RADIO.receiving_packet() ||
                            NETSTACK_RADIO.pending_packet() ||
                            NETSTACK_RADIO.channel_clear() == 0)) {
+						   	DEBUGFLOW('S');
         uint8_t ackbuf[ACK_LEN];
         wt = RTIMER_NOW();
         while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + AFTER_ACK_DETECTECT_WAIT_TIME)) { }
