@@ -48,7 +48,7 @@
 
 /* mc1322x */
 #include "utils.h"
-
+#include <mc1322x.h>
 #define DEBUG 0
 #if DEBUG
 #include <stdio.h>
@@ -56,8 +56,20 @@
 #else
 #define PRINTF(...)
 #endif
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) {if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c;}
+#else
+#define DEBUGFLOW(c)
+#endif
 
+static uint8_t entry;
+#if 0
 void rtc_isr(void) {
+//DEBUGFLOW('a');
+//	if (entry) return;
+//	entry++;
 	PRINTF("rtc_wu_irq\n\r");
 	PRINTF("now is %u\n", rtimer_arch_now());
 	disable_rtc_wu();
@@ -65,7 +77,23 @@ void rtc_isr(void) {
 	rtimer_run_next();
 	clear_rtc_wu_evt();
 	while (rtc_wu_evt()) {};
+//	DEBUGFLOW('e');
+//	entry--;
 }
+#else
+void rtc_isr(void) {
+        PRINTF("rtc_wu_irq\n\r");
+        PRINTF("now is %u\n", rtimer_arch_now());
+    //    disable_irq(MACA);
+        disable_rtc_wu();
+        disable_rtc_wu_irq();
+        *CRM_RTC_TIMEOUT = rtimer_arch_now() + 1000;
+        clear_rtc_wu_evt();
+        while (rtc_wu_evt()) {};
+  //      enable_irq(MACA);
+        rtimer_run_next();
+}
+#endif
 
 void
 rtimer_arch_init(void)

@@ -72,6 +72,7 @@ enum posts {
 	TX_POST,
 	RX_POST,
 	CCA_POST,
+	RXB_POST,
 	MAX_POST,
 };
 

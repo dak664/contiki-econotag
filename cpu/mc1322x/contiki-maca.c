@@ -56,9 +56,10 @@
 #ifndef CONTIKI_MACA_PREPEND_BYTE
 #define CONTIKI_MACA_PREPEND_BYTE 0xff
 #endif
-
+#undef BLOCKING_TX
 #ifndef BLOCKING_TX
-#define BLOCKING_TX 1
+
+#define BLOCKING_TX 0
 #endif
 
 static volatile uint8_t tx_complete;
@@ -111,7 +112,9 @@ int contiki_maca_channel_clear(void) {
 }
 
 /* not sure how to check if a reception is in progress */
+extern int maca_receiving;
 int contiki_maca_receiving_packet(void) {
+return (maca_receiving);
 	return 0;
 }
 
@@ -131,7 +134,7 @@ int contiki_maca_on_request(void) {
 
 int contiki_maca_off_request(void) {
 	GPIO->DATA_RESET.GPIO_04 = 1;
-//	maca_off();
+	maca_off();
 	return 1;
 }
 
