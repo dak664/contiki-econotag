@@ -84,7 +84,7 @@
 #define CONTIKI_MACA_RAW_MODE       0
 #define USE_32KHZ_XTAL              0
 /* Contikimac needs blocking tx for proper interpacket timing */
-#define BLOCKING_TX 1
+#define BLOCKING_TX  1
 #define MACA_AUTOACK 1
 #define NULLRDC_CONF_802154_AUTOACK_HW 1
 

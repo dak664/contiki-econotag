@@ -403,13 +403,17 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	/* LED driver */
 //	leds_init();
 
-	/* control TX_ON with the radio */
-	GPIO->FUNC_SEL.GPIO_44 = 2;
+	/* control red/green LEDs with the radio */
+//	GPIO->FUNC_SEL.GPIO_44 = 0; //no red led (default)
+	GPIO->FUNC_SEL.GPIO_44 = 1; //red on during xmit
+//	GPIO->FUNC_SEL.GPIO_44 = 2; //red on during xmit and radio off
 	GPIO->PAD_DIR.GPIO_44 = 1;
 
-//	GPIO->FUNC_SEL.GPIO_45 = 3;
-	GPIO->PAD_DIR.GPIO_45 = 1;
-	GPIO->DATA_RESET.GPIO_45 = 1;
+//	GPIO->FUNC_SEL.GPIO_45 = 0;  //green on during xmit and receive (default)
+//	GPIO->FUNC_SEL.GPIO_45 = 1;  //green on all the time
+	GPIO->FUNC_SEL.GPIO_45 = 2;  //green on during receive
+	GPIO->PAD_DIR.GPIO_45 = 1; 
+//	GPIO->DATA_RESET.GPIO_45 = 1;
 
 	/* debug io */
 	GPIO->PAD_DIR_SET.GPIO_43 = 1;
@@ -667,7 +671,7 @@ bomb
 	  }
 	         
 	  process_run();
-#if DEBUGFLOWSIZE && 0
+#if DEBUGFLOWSIZE
 
 	  if (debugflowsize) {
 		debugflow[debugflowsize]=0;

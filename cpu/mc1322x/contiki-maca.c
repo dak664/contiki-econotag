@@ -56,9 +56,8 @@
 #ifndef CONTIKI_MACA_PREPEND_BYTE
 #define CONTIKI_MACA_PREPEND_BYTE 0xff
 #endif
-#undef BLOCKING_TX
-#ifndef BLOCKING_TX
 
+#ifndef BLOCKING_TX
 #define BLOCKING_TX 0
 #endif
 
@@ -219,6 +218,7 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 
 	if(maca_pwr == 0) 
 	{
+	printf("turn on in xmit routine\n");
 		maca_on();
 	}
 
@@ -236,7 +236,8 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 
 #if BLOCKING_TX
 	/* block until tx_complete, set by contiki_maca_tx_callback */
- 	while(maca_pwr && !tx_complete && (tx_head != 0));
+ 	while(maca_pwr && !tx_complete && (tx_head != 0)); //double posts?
+//	 	while(!tx_complete); 
 #endif	
 }
 
@@ -290,9 +291,16 @@ void maca_rx_callback(volatile packet_t *p __attribute((unused))) {
 	process_poll(&contiki_maca_process);
 }
 
-
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) {if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c;}
+#else
+#define DEBUGFLOW(c)
+#endif
 #if BLOCKING_TX
 void maca_tx_callback(volatile packet_t *p __attribute((unused))) {
+//DEBUGFLOW('b');
 	tx_complete = 1;
 	tx_status = p->status;
 }

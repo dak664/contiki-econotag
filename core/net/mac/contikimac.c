@@ -56,7 +56,7 @@
 #include <string.h>
 
 
-//#define DEBUGFLOWSIZE 128
+#define DEBUGFLOWSIZE 128
 #if DEBUGFLOWSIZE
 extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 #define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
@@ -146,8 +146,8 @@ struct hdr {
 #define GUARD_TIME                         11 * CHECK_TIME
 
 /* INTER_PACKET_INTERVAL is the interval between two successive packet transmissions */
-//#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 5000
-#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 500
+#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 5000
+//#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 500
 
 /* AFTER_ACK_DETECTECT_WAIT_TIME is the time to wait after a potential
    ACK packet has been detected until we can read it out from the
@@ -371,8 +371,9 @@ powercycle(struct rtimer *t, void *ptr)
              the radio medium to make sure that we wasn't woken up by a
              false positive: a spurious radio interference that was not
              caused by an incoming packet. */
+	//		 DEBUGFLOW('?');
           if(NETSTACK_RADIO.channel_clear() == 0) {
-		  	DEBUGFLOW('Y');
+	//	  	DEBUGFLOW('Y');
             packet_seen = 1;
             break;
           }
@@ -423,7 +424,7 @@ powercycle(struct rtimer *t, void *ptr)
             break;
           }
           if(NETSTACK_RADIO.pending_packet()) {
-		  			   	DEBUGFLOW('P');
+	//	  			   	DEBUGFLOW('P');
             break;
           }
           
@@ -582,7 +583,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
   /* Make sure that the packet is longer or equal to the shortest
      packet length. */
   transmit_len = packetbuf_totlen();
- #if 0
+ #if 1
   if(transmit_len < SHORTEST_PACKET_SIZE) {
     /* Pad with zeroes */
     uint8_t *ptr;
@@ -626,9 +627,8 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
      that we have a collision, which lets the packet be received. This
      packet will be retransmitted later by the MAC protocol
      instread. */
- // if(NETSTACK_RADIO.receiving_packet() || NETSTACK_RADIO.pending_packet()) {
+  if(NETSTACK_RADIO.receiving_packet() || NETSTACK_RADIO.pending_packet()) {
   //  if(NETSTACK_RADIO.receiving_packet() ) { //econotag ok if packet is pending
-  if (0) {
     we_are_sending = 0;
     PRINTF("contikimac: collision receiving %d, pending %d\n",
            NETSTACK_RADIO.receiving_packet(), NETSTACK_RADIO.pending_packet());
@@ -655,7 +655,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
   
   if(is_streaming == 0) {
     /* Check if there are any transmissions by others. */
-#if 0
+#if 0  //gives collisions before sending with the econotag, it is sending packets too fast
     for(i = 0; i < CCA_COUNT_MAX; ++i) {
       t0 = RTIMER_NOW();
       on();
@@ -724,7 +724,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       if(!is_broadcast && (NETSTACK_RADIO.receiving_packet() ||
                            NETSTACK_RADIO.pending_packet() )) {  //econotag clear waits for tx complete
   //                         NETSTACK_RADIO.channel_clear() == 0)) {
-		DEBUGFLOW('W');
+	//	DEBUGFLOW('W');
         uint8_t ackbuf[ACK_LEN];
         wt = RTIMER_NOW();
         while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + AFTER_ACK_DETECTECT_WAIT_TIME)) { }
