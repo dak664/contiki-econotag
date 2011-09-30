@@ -38,6 +38,13 @@
 
 #include <string.h>
 
+#if ENERGEST_CONF_ON || 1
+#include "sys/energest.h"
+#else
+#define ENERGEST_ON(...)
+#define ENERGEST_OFF(...);
+#endif
+
 #ifndef DEBUG_MACA 
 #define DEBUG_MACA 0
 #endif
@@ -56,7 +63,7 @@
 #define BOUND_CHECK(x) bound_check(x)
 #endif
 
-//#define DEBUGFLOWSIZE 128
+#define DEBUGFLOWSIZE 128
 #if DEBUGFLOWSIZE
 extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 #define DEBUGFLOW(c) {if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c;}
@@ -129,29 +136,44 @@ volatile uint32_t mac_hi;
 /* get the ball rolling again */
 /* also checks that the clock is running --- if it isn't then */
 /* it calls redoes the maca intialization but _DOES NOT_ free all packets */ 
-
+volatile lastinterrupt;
 void check_maca(void) {
 	if(maca_pwr == 0) return;
-	safe_irq_disable(MACA);
+	
+	
+//	safe_irq_disable(MACA);
 	static volatile uint32_t last_time;
 	static volatile uint32_t last_entry;
 	volatile uint32_t i;
 #if DEBUG_MACA
 	volatile uint32_t count;
-#endif 
+#endif
+	if(bit_is_set(*NIPEND, INT_NUM_MACA)) { //should not be
+		DEBUGFLOW('M');DEBUGFLOW('P');
+		enable_irq(MACA);
+	} else if(last_entry == maca_entry) {  //interrupts not happening?
+		if (last_post==RX_POST) { //probably ok
+		} else {
+			printf("MAC Hung?, last post %u\n",last_post);
+			if (*MACA_CLK > last_post_time+100000) {
+				DEBUGFLOW('M');DEBUGFLOW('F');
+				*INTFRC = (1<<INT_NUM_MACA);
+			}
+		}
+	}			
+	last_entry = maca_entry;
 
+	return;	
 	/* if *MACA_CLK == last_time */
 	/* try waiting for one clock period */
 	/* since maybe check_maca is getting called quickly */	
 	for(i=0; (i < 1024) && (*MACA_CLK == last_time); i++) { continue; }
-
 	if(*MACA_CLK == last_time) {
 	DEBUGFLOW('Z');
 		PRINTF("check maca: maca_clk stopped, restarting\n");
 		/* clock isn't running */
-		ResumeMACASync();
+	//	ResumeMACASync();
 		*INTFRC = (1<<INT_NUM_MACA);
-	//	*MACA_SETIRQ = 1;
 	} else {
 		if((last_time > (*MACA_SFTCLK + RECV_SOFTIMEOUT)) &&
 		   (last_time > (*MACA_CPLCLK + CPL_TIMEOUT))) {
@@ -186,7 +208,6 @@ void check_maca(void) {
 			       packet_pool[i].rxd);
 		}
 #endif
-DEBUGFLOW('i');DEBUGFLOW('c');
 		if(bit_is_set(*NIPEND, INT_NUM_MACA)) { *INTFRC = (1 << INT_NUM_MACA); }
 	}
 #endif /* DEBUG_MACA */
@@ -218,7 +239,6 @@ void maca_init(void) {
 		
 	
 	enable_irq(MACA);
-	DEBUGFLOW('s');DEBUGFLOW('i');
 	*INTFRC = (1 << INT_NUM_MACA);
 }
 
@@ -265,7 +285,6 @@ int count_packets(void) {
 	volatile int8_t total = -1;
 
 #if PACKET_STATS
-bomb
 	volatile packet_t *pk;
 	volatile uint8_t tx, rx, free;
 	volatile int i;
@@ -405,11 +424,12 @@ void post_receive(void) {
 	/* with timeout */		
 	*MACA_SFTCLK = *MACA_CLK + RECV_SOFTIMEOUT; /* soft timeout */ 
 //	*MACA_TMREN = (1 << maca_tmren_sft);
+
 	/* start the receive sequence */
+	ENERGEST_ON(ENERGEST_TYPE_LISTEN);
+
 #if 1
 	*MACA_CONTROL = ( (1 << maca_ctrl_asap) | 
-//		*MACA_CONTROL = ( 
-//			  ( 4 << PRECOUNT) |
 			  ( 4 << PRECOUNT) |
 			  ( fcs_mode << NOFC ) |
 			  ( prm_mode << PRM) |
@@ -467,17 +487,14 @@ void post_cca(void)
 //	*MACA_TMREN = (1 << maca_tmren_cpl);
 	
 //	enable_irq(MACA);
+
+	/* Yellow LED for CCA listening time */
+	ENERGEST_ON(ENERGEST_TYPE_LED_YELLOW);
 #if 1
-	*MACA_CONTROL = ( ( 10 << PRECOUNT) |
+	*MACA_CONTROL = ( ( 10 << PRECOUNT) |  //why 10?
 				(1 << maca_ctrl_asap) | //without gives late start complete code
-//			  ( prm_mode << PRM) |
-//			  (maca_ctrl_mode_no_cca << maca_ctrl_mode) |
-			  			  (1 << maca_ctrl_mode) |
+			  (1 << maca_ctrl_mode) |
 			  (maca_ctrl_seq_cca));	
-#elif 0
-//last_post=NO_POST;
-	*MACA_CONTROL =  (1 << maca_ctrl_asap) | 1;
-						DEBUGFLOW('9');
 #else
 //	*MACA_CONTROL =  (1 << maca_ctrl_asap) | 0;
 				/* Create a dummy tx packet */
@@ -509,16 +526,10 @@ void post_cca(void)
 }
 
 void post_tx(void) {
-#if 0
-last_post=NO_POST;
-	*MACA_CONTROL =  (1 << maca_ctrl_asap) | maca_ctrl_seq_nop;
-return;
-#endif
 	/* set dma tx pointer to the payload */
 	/* and set the tx len */
-//	GPIO->DATA_RESET.GPIO_45 = 1;dak
-//	disable_irq(MACA);
-	DEBUGFLOW('P');
+//	GPIO->DATA_RESET.GPIO_45 = 1;
+
 	last_post = TX_POST;
 	last_post_time = *MACA_CLK;
 	dma_tx = tx_head; 
@@ -552,6 +563,7 @@ return;
 //	*MACA_TMREN = (1 << maca_tmren_cpl);
 	
 //	enable_irq(MACA);
+	ENERGEST_ON(ENERGEST_TYPE_TRANSMIT);
 #if 1
 		*MACA_CONTROL = ( ( 4 << PRECOUNT) |
 			  ( prm_mode << PRM) |
@@ -590,9 +602,9 @@ void tx_packet(volatile packet_t *p) {
 		/* move the queue */
 		tx_end = p; tx_end->left = 0;
 	}
-//	free_all_packets();//dak
+
 //	print_packets("tx packet");
-DEBUGFLOW('Q');
+//DEBUGFLOW('Q');
 	irq_restore();
 	/* Force interrupt unless an action complete interrupt is pending */
 	if(last_post == NO_POST) { *INTFRC = (1<<INT_NUM_MACA); }
@@ -608,7 +620,7 @@ uint8_t cca(void) {
 	if (maca_pwr == 0) {
 	 return 1; //could turn radio on and continue
 	}
-DEBUGFLOW('_');
+//DEBUGFLOW('_');
 
 	/* If receiving a packet return busy */
 	if (maca_receiving) return 0;
@@ -816,7 +828,6 @@ void maca_isr(void) {
 	{ PRINTF("maca timeout\n\r"); 	}
 
 	if (data_indication_irq()) {
-	DEBUGFLOW('i');
 		*MACA_CLRIRQ = (1 << maca_irq_di);
 		dma_rx->length = *MACA_GETRXLVL - 2; /* packet length does not include FCS */
 		dma_rx->lqi = get_lqi();
@@ -946,29 +957,14 @@ void maca_isr(void) {
 }
 #else
 void maca_isr(void) {
-	DEBUGFLOW('i');
 
 	maca_entry++;
 
-	if (bit_is_set(*MACA_IRQ, 11)) DEBUGFLOW('b');
-		if (bit_is_set(*MACA_IRQ, 10)) DEBUGFLOW('a');
-			if (bit_is_set(*MACA_IRQ, 9)) DEBUGFLOW('9');
-			if (*MACA_STATUS & 0x00000ff0) DEBUGFLOW('W');
-	
 	if (bit_is_set(*MACA_STATUS, maca_status_ovr)) DEBUGFLOW('1');
 	{ PRINTF("maca overrun\n\r"); }
-	if (bit_is_set(*MACA_STATUS, maca_status_busy)) {
-		if (last_post == CCA_POST) {
-	//		DEBUGFLOW('Y');DEBUGFLOW('E');DEBUGFLOW('S');
-		} else {
-			if (*MACA_STATUS&0xf==2) DEBUGFLOW('Y');
-	//	DEBUGFLOW('B');DEBUGFLOW('U');DEBUGFLOW('S');DEBUGFLOW('Y');		
-		}
 
-	}
-	
 if (*MACA_IRQ==0) {  //forced interrupt
-	DEBUGFLOW('f');
+
 		goto resumesync;
 	}
 	{ PRINTF("maca busy\n\r"); }
@@ -977,142 +973,95 @@ if (*MACA_IRQ==0) {  //forced interrupt
 	if (bit_is_set(*MACA_STATUS, maca_status_to))DEBUGFLOW('4');
 	{ PRINTF("maca timeout\n\r"); 	}
 
-//Get 9 action start interrupts in a row after an tx post
-//7 after a rx post
-//R=68 iAtPi#i#i#i#i#i#i#i#i#
-//R=68 iAtRi#i#i#i#i#i#i#
-//R=66 iAtPi#i#i#i#i#i#i#
-//R=66 iAtRi#i#i#i#i#
+/* Multiple action start interrupts occur when a sequence is started, unless there is a small delay */
+/* See below. The start interrupt does not seem terribly useful so it is disabled */
 	if (bit_is_set(*MACA_IRQ,maca_irq_strt)) {
-				DEBUGFLOW('#');
-  if  ((unsigned int)((*MACA_STATUS)&0xf) !=14) {
-		DEBUGFLOW('A'+((unsigned int)(*MACA_STATUS)&0xf));
-}           
-#if 0
-	int i;
-			DEBUGFLOW('q');
-	for (i=0;i<19;i++) {
-	  if (theregister[i]==0) {
-		theregister[i]=(*CRM_RTC_COUNT);
-		break;
-	  }
-	}
-#endif
+		DEBUGFLOW('#');
+		if  ((unsigned int)((*MACA_STATUS)&0xf) !=14) {
+			DEBUGFLOW('A'+((unsigned int)(*MACA_STATUS)&0xf));
+		}           
 	 	*MACA_CLRIRQ = (1 << maca_irq_strt);
-	
-//		return;
 	}
 	if (bit_is_set(*MACA_IRQ,maca_irq_lvl)) {
 			DEBUGFLOW('l');
 	 	*MACA_CLRIRQ = (1 << maca_irq_lvl);
-//		return;
 	}
 	if (bit_is_set(*MACA_IRQ,maca_irq_wu)) {  //reserved
 			DEBUGFLOW('w');DEBUGFLOW('u');;
 	 	*MACA_CLRIRQ = (1 << maca_irq_wu);
-	//	return;
 	}
 		if (bit_is_set(*MACA_IRQ,maca_irq_rst)) {  //reserved
 		DEBUGFLOW('=');
 	 	*MACA_CLRIRQ = (1 << maca_irq_rst);
-	//	return;
 	}
-
 	if (bit_is_set(*MACA_IRQ,maca_irq_poll)) {
 			DEBUGFLOW(';');
 	 	*MACA_CLRIRQ = (1 << maca_irq_poll);
-	//	return;
 	}
 	if (bit_is_set(*MACA_IRQ,maca_irq_sync)) {  //beginning of packet detected
-		DEBUGFLOW('>');
+//		DEBUGFLOW('>');
 		if (last_post == RX_POST) {			//could be ack back from a TX post
-				DEBUGFLOW('>');
+//			DEBUGFLOW('>');
 			maca_receiving = 1;
 			last_post = RXB_POST;
 		}
 	 	*MACA_CLRIRQ = (1 << maca_irq_sync);
-	//	if (*MACA_IRQ==0) return; //working with this
 	}
 	if (bit_is_set(*MACA_IRQ,maca_irq_cm)) {  //Complete Clock trigger
 		DEBUGFLOW(':');
 	 	*MACA_CLRIRQ = (1 << maca_irq_cm);
-//		return;
 	}	
-	
-		
+			
 	if (data_indication_irq()) {
-	//a data indication interrupt is guaranteed to occur before or at the same time as a complete interrupt
-		DEBUGFLOW('d');
+	/* A data indication interrupt is guaranteed to occur before or at the same time as a complete interrupt */
+	/* The complete interrupt will be delayed by an autoack tx */
 		if (last_post != RXB_POST) {			//it should have been set by sync above
 			DEBUGFLOW('X');
 		}
 		*MACA_CLRIRQ = (1 << maca_irq_di);
-		//fall through to action complete, probably
-#if 0
-		dma_rx->length = *MACA_GETRXLVL - 2; /* packet length does not include FCS */
-		dma_rx->lqi = get_lqi();
-		dma_rx->rx_time = *MACA_TIMESTAMP;
-
-		/* check if received packet needs an ack */
-		if(prm_mode == AUTOACK && (dma_rx->data[1] & MAC_ACK_REQUEST_FLAG)) {
-			/* this wait is necessary to auto-ack */
-			volatile uint32_t wait_clk;
-			wait_clk = *MACA_CLK + 200;
-			while(*MACA_CLK < wait_clk) { continue; }
-		}
-
-		if(maca_rx_callback != 0) { maca_rx_callback(dma_rx); }
-
-		add_to_rx(dma_rx);
-		dma_rx = 0;
-		return;
-#endif
 	}
 	if (filter_failed_irq()) {
-		DEBUGFLOW('$');
+		DEBUGFLOW('$');		DEBUGFLOW('$');		DEBUGFLOW('$');
 		PRINTF("maca filter failed\n\r");
 		*MACA_CLRIRQ = (1 << maca_irq_flt);
-					maca_receiving = 0;
-//		goto resumesync;  //hangs till next txmit otherwise
-//		return;
+		maca_receiving = 0;
+		goto resumesync; //This may fix the border router hang...
+//		return; //hangs till next txmit if returns here?
 	}
 	if (checksum_failed_irq()) {
 		DEBUGFLOW('k');
 		PRINTF("maca checksum failed\n\r");
 		*MACA_CLRIRQ = (1 << maca_irq_crc);
 		last_post=NO_POST;
-//		goto actioncomplete;
-//		return;  //interrupts stop if return here
 	}
 	if (softclock_irq()) {  //disabled
 		DEBUGFLOW('*');
 		*MACA_CLRIRQ = (1 << maca_irq_sftclk);
-	//	return;
 	}
 	if (poll_irq()) {
 		DEBUGFLOW('m');	
 		*MACA_CLRIRQ = (1 << maca_irq_poll);
-	//	return;  9 returns
 	}
 	if(action_complete_irq()) {
-	DEBUGFLOW('A');
-/*
-9.5.1.8.2 ActionComplete_IRQ
-The ActionComplete_IRQ is generated when a sequence action is completed. Sequence actions are started
-by writing an action to the control register. The sequencer then performs the required actions and moves
-to idle mode after completion. When generating this interrupt, the MACA_STATUS register must also be
-updated to reflect the complete reason code.
-*/
+//	DEBUGFLOW('A');
+
 actioncomplete:
-			maca_receiving = 0;
-if  ((unsigned int)((*MACA_STATUS)&0xf) !=0) {
-//A=success  C= E=aborted F=noack M=pll unlock O=not completed
-		DEBUGFLOW('(');DEBUGFLOW('A'+((unsigned int)(*MACA_STATUS)&0xf));DEBUGFLOW(')');
-}
+		/* No longer receiving packet */
+		maca_receiving = 0;
+		
+		/* Previous CCA no longer valid */
+//		maca_busy = 0;  //probably wont work, rx post will interrupt before cca() sees it
+
+		if  ((unsigned int)((*MACA_STATUS)&0xf) !=0) {
+//A=success  C=Channel busy E=aborted F=noack M=pll unlock O=not completed
+			if (!((last_post==CCA_POST)&&((unsigned int)(*MACA_STATUS)&0xf) ==2)) {
+				DEBUGFLOW('(');DEBUGFLOW('A'+((unsigned int)(*MACA_STATUS)&0xf));DEBUGFLOW(')');
+			}
+		}
 		*MACA_CLRIRQ = (1 << maca_irq_acpl);
 
 		if(last_post == TX_POST) {
-			DEBUGFLOW('t');
+			ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 			tx_head->status = get_field(*MACA_STATUS,CODE);
 
 #if MACA_INSERT_ACK
@@ -1135,7 +1084,6 @@ if  ((unsigned int)((*MACA_STATUS)&0xf) !=0) {
 					ack_p->data[2] = 0;
 					ack_p->data[3] = *MACA_TXSEQNR;
 					insert_at_rx_head(ack_p);
-					DEBUGFLOW('I');DEBUGFLOW('A');
 				}
 
 			}
@@ -1144,48 +1092,41 @@ if  ((unsigned int)((*MACA_STATUS)&0xf) !=0) {
 			if(maca_tx_callback != 0) { maca_tx_callback(tx_head); }
 			dma_tx = 0;
 			free_tx_head();
-		} else if(last_post ==  RXB_POST) {
-	DEBUGFLOW('r');
-		dma_rx->length = *MACA_GETRXLVL - 2; /* packet length does not include FCS */
-		dma_rx->lqi = get_lqi();
-		dma_rx->rx_time = *MACA_TIMESTAMP;
-#if 0
-		/* check if received packet needs an ack */
-		if(prm_mode == AUTOACK && (dma_rx->data[1] & MAC_ACK_REQUEST_FLAG)) {
-			/* this wait is necessary to auto-ack */
-			volatile uint32_t wait_clk;
-			wait_clk = *MACA_CLK + 200;
-			while(*MACA_CLK < wait_clk) { continue; }
-		}
-#endif
-		if(maca_rx_callback != 0) { maca_rx_callback(dma_rx); }
 
-		add_to_rx(dma_rx);
-		dma_rx = 0;
+		} else if(last_post ==  RXB_POST) {
+			ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+			dma_rx->length = *MACA_GETRXLVL - 2; /* packet length does not include FCS */
+			dma_rx->lqi = get_lqi();
+			dma_rx->rx_time = *MACA_TIMESTAMP;
+			if(maca_rx_callback != 0) { maca_rx_callback(dma_rx); }
+
+			add_to_rx(dma_rx);
+			dma_rx = 0;
 
 		} else if(last_post == CCA_POST ) {
-/* status busy bit and status code == 2 (busy) seem to always be the same */
-/* register 08x0009490 seems usable for the cca threshold */
-//	if (*MACA_STATUS==2) {  //always 2 when busy bit set?
-	if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
-//	if((*((volatile uint32_t *)(0x80009490))&0xff) >70) { //my baseline background 64 +/- 5 
-		  maca_busy=1;
-		  DEBUGFLOW('B');
-		  } else {
-		  maca_busy = 2;
-		  DEBUGFLOW('.');
-		  }
+			ENERGEST_OFF(ENERGEST_TYPE_LED_YELLOW);
+/*
+ *			status busy bit and status code == 2 (busy) seem to always be the same
+ *			register 08x0009490 seems usable for a cca threshold test at this point
+ *			if((*((volatile uint32_t *)(0x80009490))&0xff) >70) { //my baseline background 64 +/- 5 
+ *			if (*MACA_STATUS==2) { 
+ */
+			if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
+				maca_busy=1;
+			} else {
+				maca_busy = 2;
+			}
 		
 		} else if (last_post==NO_POST) {
-		DEBUGFLOW('N');
+			DEBUGFLOW('N');
 		} else if (last_post==RX_POST) {
-		DEBUGFLOW('|');
+			DEBUGFLOW('|');
+			ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 		}
 
 resumesync:
 #if 0
 		ResumeMACASync();
-#elif 0
 #else
 { 
   volatile uint32_t clk, TsmRxSteps, LastWarmupStep, LastWarmupData, LastWarmdownStep, LastWarmdownData;
@@ -1209,7 +1150,7 @@ resumesync:
   DEBUGFLOW('&');
 {int i;for (i=0;i<32;i++) {
 	if (*MACA_IRQ&(1<<i)) {
-	//if (bit_is_set(*MACA_IRQ,1<<i)) {//bit_is_set does not work
+	//if (bit_is_set(*MACA_IRQ,1<<i)) {//bit_is_set does not work for this!
 		DEBUGFLOW('S');
 	if (i<10) {DEBUGFLOW('0'+i);}
 	else if (i<20) {DEBUGFLOW('1');DEBUGFLOW('0'+i-10);}
@@ -1221,24 +1162,23 @@ resumesync:
 
 		if(do_cca == 1) {
 			do_cca = 0;
-			DEBUGFLOW('C');
 			post_cca();
 		} else if(tx_head != 0) {
 			post_tx();
 //multiple action start interrupts will occur if no delay here
+//If start interrupts disabled may be able to skip this...
 {volatile int i;for (i=0;i<400;i++) {} }  //one action start interrupt
 //{volatile int i;for (i=0;i<200;i++) {} }  //one action start interrupt
 //{volatile int i;for (i=0;i<150;i++) {} }  //three action start interrupt
 //{volatile int i;for (i=0;i<180;i++) {} }  //two action start interrupt
 		} else {
-			DEBUGFLOW('R');
 			post_receive();
+//If start interrupts disabled may be able to skip this...
 {volatile int i;for (i=0;i<150;i++) {} }  //one start interrupt
 //{volatile int i;for (i=0;i<120;i++) {} }  //two or three start interrupt
 //{volatile int i;for (i=0;i<140;i++) {} }  //two sart interrupt
 		}
 	}
-//	*MACA_CLRIRQ=0xffff;
 }
 #endif
 
@@ -1303,7 +1243,7 @@ void reset_maca(void)
 	for(cnt = 0; cnt < 10; cnt++) {};
 	
 	*MACA_RESET = (1 << maca_reset_clkon);
-	DEBUGFLOW('R');DEBUGFLOW('S');
+
 	*MACA_CONTROL = maca_ctrl_seq_nop | (1 << maca_ctrl_asap);
 	
 	for(cnt = 0; cnt < 100; cnt++) {};
@@ -1403,24 +1343,33 @@ const uint32_t addr_reg_rep[MAX_DATA] = { 0x80004118,0x80009204,0x80009208,0x800
 const uint32_t data_reg_rep[MAX_DATA] = { 0x00180012,0x00000605,0x00000504,0x00001111,0x0fc40000,0x20046000,0x4005580c,0x40075801,0x4005d801,0x5a45d800,0x4a45d800,0x40044000,0x00106000,0x00083806,0x00093807,0x0009b804,0x000db800,0x00093802,0x00000015,0x00000002,0x0000000f,0x0000aaa0,0x01002020,0x016800fe,0x8e578248,0x000000dd,0x00000946,0x0000035a,0x00100010,0x00000515,0x00097feb,0x00180358,0x00000455,0x00000001,0x00020003,0x00040014,0x00240034,0x00440144,0x02440344,0x04440544,0x0ee7fc00,0x00000082,0x0000002a };
 
 void maca_off(void) {
-DEBUGFLOW('-');
-if ((last_post==TX_POST) || (last_post==RXB_POST)) {
-return; //stay on if busy
-}
-//return;
-//	GPIO->DATA_RESET.GPIO_45 = 1;//dak
-	disable_irq(MACA); // this line bad
+
+	/* Stay on if busy */
+	if ((last_post==TX_POST) || (last_post==RXB_POST)) {
+		DEBUGFLOW('!');
+		return;
+	}
+	disable_irq(MACA);
+	ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+	
+	/* contikimac does an off() after unicast xmit before on() cca is complete */
+	if (last_post == CCA_POST) { 
+		DEBUGFLOW('?');
+		ENERGEST_OFF(ENERGEST_TYPE_LED_YELLOW);
+	}
+
 	/* turn off the radio regulators */
 	reg(0x80003048) =  0x00000f00;
+
 	/* hold the maca in reset */
 	maca_reset = maca_reset_rst;
 	maca_pwr = 0;
 }
 
 void maca_on(void) {
-DEBUGFLOW('+');
+
 	if (maca_pwr != 0) {
-	 return;
+		return;
 	}
 
 	/* turn the radio regulators back on */
@@ -1428,11 +1377,9 @@ DEBUGFLOW('+');
 	
 	*MACA_RESET = (1 << maca_reset_clkon);
 
-
-//	*MACA_CLRIRQ = 0xffff;
-
 	maca_pwr = 1;
-//	set_channel(26 - 11);
+
+	/* May not be necessary? */
 	*MACA_MACPANID = 0xcdab; /* this is the hardcoded contiki pan, register is
 				    PACKET order */
 	*MACA_MAC16ADDR = 0xffff; /* short addressing isn't used, set this to 0xffff
@@ -1441,8 +1388,6 @@ DEBUGFLOW('+');
 	*MACA_MAC64LO = mac_lo;
 	
 	while (!((*(volatile uint32_t *)0x80003018) & (1<< 19))    ) {} //wait for vreg_1P5V_RDY
-
-//	*((volatile uint32_t *)(0x80009460))=0x00097feb;     //about right, busy when jackdaw sneezing 2 meters away at -17.2dBm	
 
 /* Start with a cca but don't wait till finished */
 	do_cca=1;
@@ -1637,7 +1582,7 @@ void set_demodulator_type(uint8_t demod) {
 #define ADDR_POW2 ADDR_POW1 + 12
 #define ADDR_POW3 ADDR_POW1 + 64
 void set_power(uint8_t power) {
-DEBUGFLOW('s');DEBUGFLOW('P');
+
 	safe_irq_disable(MACA);
 
 	reg(ADDR_POW1) = PSMVAL[power];
@@ -1704,7 +1649,6 @@ const uint32_t VCODivF[16] = {
 void set_channel(uint8_t chan) {
 	volatile uint32_t tmp;
 	safe_irq_disable(MACA);
-	DEBUGFLOW('s');DEBUGFLOW('c');
 
 	tmp = reg(ADDR_CHAN1);
 	tmp = tmp & 0xbfffffff;

@@ -364,16 +364,13 @@ powercycle(struct rtimer *t, void *ptr)
           powercycle_turn_radio_on();
 
 	//	        while(RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + CCA_CHECK_TIME)) { } //dak its in the send routine so why not here
-	//	  while ((t0+5*CCA_CHECK_TIME) > RTIMER_NOW()) {continue;}  //temp delay for testing - dak
           /* Check if a packet is seen in the air. If so, we keep the
              radio on for a while (LISTEN_TIME_AFTER_PACKET_DETECTED) to
              be able to receive the packet. We also continuously check
              the radio medium to make sure that we wasn't woken up by a
              false positive: a spurious radio interference that was not
              caused by an incoming packet. */
-	//		 DEBUGFLOW('?');
           if(NETSTACK_RADIO.channel_clear() == 0) {
-	//	  	DEBUGFLOW('Y');
             packet_seen = 1;
             break;
           }
@@ -506,6 +503,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
     PRINTDEBUG("contikimac: send broadcast\n");
 
     if(broadcast_rate_drop()) {
+		PRINTDEBUG("A\n");
       return MAC_TX_COLLISION;
     }
   } else {
@@ -541,6 +539,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       }
       stream_until = RTIMER_NOW() + DEFAULT_STREAM_TIME;
       is_streaming = 1;
+	  		PRINTDEBUG("B\n");
     }
   }
 
@@ -655,7 +654,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
   
   if(is_streaming == 0) {
     /* Check if there are any transmissions by others. */
-#if 0  //gives collisions before sending with the econotag, it is sending packets too fast
+#if 0  //seems like unnecessary delay, gives collisions before sending with the econotag, it is sending packets too fast
     for(i = 0; i < CCA_COUNT_MAX; ++i) {
       t0 = RTIMER_NOW();
       on();
@@ -682,7 +681,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
   }
 
   if(!is_broadcast) {
-    on();
+    on();  //This does a cca on the econotag
   }
   
   watchdog_periodic();
@@ -708,23 +707,16 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       int ret;
 
       txtime = RTIMER_NOW();
-	//  printf("tx %d\n",transmit_len);
+
       ret = NETSTACK_RADIO.transmit(transmit_len);
 
       wt = RTIMER_NOW();
       while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + INTER_PACKET_INTERVAL)) { }
-#if 0
-	if (!is_broadcast && (strobes==10)) {
-	      got_strobe_ack = 1;
-          encounter_time = previous_txtime;
-          break;
-	}
-#endif
-//DEBUGFLOW('?');
+
       if(!is_broadcast && (NETSTACK_RADIO.receiving_packet() ||
-                           NETSTACK_RADIO.pending_packet() )) {  //econotag clear waits for tx complete
-  //                         NETSTACK_RADIO.channel_clear() == 0)) {
-	//	DEBUGFLOW('W');
+                           NETSTACK_RADIO.pending_packet()   ||
+                           NETSTACK_RADIO.channel_clear() == 0)) {  //not necessary on econotag?
+
         uint8_t ackbuf[ACK_LEN];
         wt = RTIMER_NOW();
         while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + AFTER_ACK_DETECTECT_WAIT_TIME)) { }
@@ -818,7 +810,7 @@ input_packet(void)
 {
   /* We have received the packet, so we can go back to being
      asleep. */
-  off();
+  off();  //or maybe here?
 
   /*  printf("cycle_start 0x%02x 0x%02x\n", cycle_start, cycle_start % CYCLE_TIME);*/
   

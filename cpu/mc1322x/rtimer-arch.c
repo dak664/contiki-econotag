@@ -43,8 +43,13 @@
 #include <signal.h>
 
 /* contiki */
-#include "sys/energest.h"
 #include "sys/rtimer.h"
+#if ENERGEST_CONF_ON
+#include "sys/energest.h"
+#else
+#define ENERGEST_ON(...)
+#define ENERGEST_OFF(...);
+#endif
 
 /* mc1322x */
 #include "utils.h"
@@ -67,6 +72,8 @@ extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 static uint8_t entry;
 #if 0
 void rtc_isr(void) {
+	/* Green led for monitoring time spent in rtimer interrupts */
+	ENERGEST_ON(ENERGEST_TYPE_LED_GREEN);
 //DEBUGFLOW('a');
 //	if (entry) return;
 //	entry++;
@@ -79,9 +86,11 @@ void rtc_isr(void) {
 	while (rtc_wu_evt()) {};
 //	DEBUGFLOW('e');
 //	entry--;
+	ENERGEST_OFF(ENERGEST_TYPE_LED_GREEN);
 }
 #else
 void rtc_isr(void) {
+	ENERGEST_ON(ENERGEST_TYPE_LED_GREEN);
         PRINTF("rtc_wu_irq\n\r");
         PRINTF("now is %u\n", rtimer_arch_now());
     //    disable_irq(MACA);
@@ -92,6 +101,7 @@ void rtc_isr(void) {
         while (rtc_wu_evt()) {};
   //      enable_irq(MACA);
         rtimer_run_next();
+	ENERGEST_OFF(ENERGEST_TYPE_LED_GREEN);
 }
 #endif
 

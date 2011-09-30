@@ -169,7 +169,7 @@ typedef unsigned long rtimer_clock_t;
 #define IEEE802154_CONF_PANID       0xABCD
 
 #define PROFILE_CONF_ON 0
-#define ENERGEST_CONF_ON 0
+#define ENERGEST_CONF_ON 1
 
 #define AODV_COMPLIANCE
 #define AODV_NUM_RT_ENTRIES 32

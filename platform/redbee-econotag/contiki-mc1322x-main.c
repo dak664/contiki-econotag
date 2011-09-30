@@ -587,6 +587,7 @@ uint32_t p=(uint32_t)&__heap_end__-4;
   /* Main scheduler loop */
   while(1) {
 	  volatile uint8_t i;
+	  //Border router hangs after a send broadcast after a while
 //	  check_maca();
 #if 0
 {static volatile uint32_t counter=0,counter2;
@@ -660,7 +661,6 @@ bit 18-19  11          ????????
 //}
 #endif
 #if (USE_WDT == 1)
-bomb
 	  cop_service();
 #endif
 
@@ -698,10 +698,8 @@ bomb
 if ((clocktime%STAMPS)==0) {
 #if ENERGEST_CONF_ON
 #include "lib/print-stats.h"
+
 	print_stats();
-#elif RADIOSTATS
-extern volatile unsigned long radioontime;
-  printf("\r%u(%u)s ",clocktime,radioontime);
 #else
   printf("%us\n",clocktime);
 #endif

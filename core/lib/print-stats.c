@@ -60,6 +60,7 @@
 void
 print_stats(void)
 {
+#if 0
   PRINTA("S %d.%d clock %lu tx %lu rx %lu rtx %lu rrx %lu rexmit %lu acktx %lu noacktx %lu ackrx %lu timedout %lu badackrx %lu toolong %lu tooshort %lu badsynch %lu badcrc %lu contentiondrop %lu sendingdrop %lu lltx %lu llrx %lu\n",
 	 rimeaddr_node_addr.u8[0], rimeaddr_node_addr.u8[1],
 	 DISPLAYTIME,
@@ -71,7 +72,39 @@ print_stats(void)
 	 rimestats.badsynch, rimestats.badcrc,
 	 rimestats.contentiondrop, rimestats.sendingdrop,
 	 rimestats.lltx, rimestats.llrx);
-#if ENERGEST_CONF_ON
+#endif
+/* Update the counters for proper display */
+#if 1 
+{int i;for (i=1;i<ENERGEST_TYPE_MAX;i++) {
+	if (energest_current_mode[i]) {
+		ENERGEST_OFF(i);
+		ENERGEST_ON(i);
+	}
+}
+}
+#endif
+#if ENERGEST_CONF_ON || 1
+static uint8_t flag;
+if (flag==0) {
+	flag=1;
+	PRINTA("*************************************\n");
+	PRINTA(" Times are in hundredths of a percent\n");
+	PRINTA("*************************************\n");
+}
+uint32_t displaytime=DISPLAYTIME;
+  PRINTA(" %lu cpu %lu lpm %lu irq %lu gled %lu yled %lu rled %lu tx %lu listen %lu sensors %lu serial %lu\n",
+	 displaytime,
+	 energest_total_time[ENERGEST_TYPE_CPU].current,
+	 energest_total_time[ENERGEST_TYPE_LPM].current,
+	((energest_total_time[ENERGEST_TYPE_IRQ].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LED_GREEN].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LED_YELLOW].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LED_RED].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_TRANSMIT].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LISTEN].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	 energest_total_time[ENERGEST_TYPE_SENSORS].current,
+	 energest_total_time[ENERGEST_TYPE_SERIAL].current);
+#elif ENERGEST_CONF_ON
   PRINTA("E %d.%d clock %lu cpu %lu lpm %lu irq %lu gled %lu yled %lu rled %lu tx %lu listen %lu sensors %lu serial %lu\n",
 	 rimeaddr_node_addr.u8[0], rimeaddr_node_addr.u8[1],
 	 DISPLAYTIME,
