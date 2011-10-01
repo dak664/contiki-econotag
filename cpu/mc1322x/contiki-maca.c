@@ -216,9 +216,11 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 	tx_complete = 0;
 #endif
 
+	/* Turn radio on if necessary, cancelling initial cca */
 	if(maca_pwr == 0) 
 	{
-	printf("turn on in xmit routine\n");
+extern volatile uint8_t do_cca;
+		do_cca = -1;
 		maca_on();
 	}
 
@@ -236,8 +238,8 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 
 #if BLOCKING_TX
 	/* block until tx_complete, set by contiki_maca_tx_callback */
- 	while(maca_pwr && !tx_complete && (tx_head != 0)); //double posts?
-//	 	while(!tx_complete); 
+	/* Contikimac needs blocking tx for proper timing and to prevent strobe overrun */
+ 	while(maca_pwr && !tx_complete && (tx_head != 0));
 #endif	
 }
 

@@ -426,7 +426,8 @@ void post_receive(void) {
 //	*MACA_TMREN = (1 << maca_tmren_sft);
 
 	/* start the receive sequence */
-	ENERGEST_ON(ENERGEST_TYPE_LISTEN);
+	ENERGEST_OFF(ENERGEST_TYPE_LISTEN);  //aborted rx will not do the off
+	ENERGEST_ON(ENERGEST_TYPE_LISTEN);   //and this would overwrite the actual start time
 
 #if 1
 	*MACA_CONTROL = ( (1 << maca_ctrl_asap) | 
@@ -489,40 +490,13 @@ void post_cca(void)
 //	enable_irq(MACA);
 
 	/* Yellow LED for CCA listening time */
+	ENERGEST_OFF(ENERGEST_TYPE_LED_YELLOW);
 	ENERGEST_ON(ENERGEST_TYPE_LED_YELLOW);
-#if 1
+
 	*MACA_CONTROL = ( ( 10 << PRECOUNT) |  //why 10?
 				(1 << maca_ctrl_asap) | //without gives late start complete code
 			  (1 << maca_ctrl_mode) |
 			  (maca_ctrl_seq_cca));	
-#else
-//	*MACA_CONTROL =  (1 << maca_ctrl_asap) | 0;
-				/* Create a dummy tx packet */
-		//			txp.length = 3;
-	//				txp.offset = 1;
-	//				txp.data[0] = 3;
-	//	*MACA_TXSEQNR = txp.data[2];
-//	*MACA_TXLEN = (uint32_t)((txp.length) + 2) | (3 << 16); /* set rx len to ACK length */
-	//	*MACA_TXLEN = (uint32_t)(2) | (3 << 16); /* set rx len to ACK length */
-		*MACA_TXLEN = (uint32_t)((txp.length) + 2) | (3 << 16); /* set rx len to ACK length */
-//	*MACA_DMATX = (uint32_t)&(txp.data[ 0 + txp.offset]);
-			*MACA_DMATX = (uint32_t)&(dummy_ack);
-	*MACA_TXSEQNR = 42;
-//	*MACA_TXLEN = (uint32_t)((3) | (3 << 16)); /* set rx len to ACK length */
-//	*MACA_DMATX = (uint32_t)&(txp.data[0]);
-	dma_rx = &dummy_ack;
-	*MACA_DMARX = (uint32_t)&(dma_rx->data[0]);
-
-		*MACA_CONTROL = ( ( 4 << PRECOUNT) |
-			  ( prm_mode << PRM) |
-	//		 (1 << maca_ctrl_mode) | //1 cca before xmit
-			 			 (1 << maca_ctrl_mode) | //1 cca before xmit
-			  (1 << maca_ctrl_asap) |
-			  (3));	 
-//	enable_irq(MACA);			  
-					
-#endif
-//		enable_irq(MACA);
 }
 
 void post_tx(void) {
@@ -563,6 +537,7 @@ void post_tx(void) {
 //	*MACA_TMREN = (1 << maca_tmren_cpl);
 	
 //	enable_irq(MACA);
+	ENERGEST_OFF(ENERGEST_TYPE_TRANSMIT);
 	ENERGEST_ON(ENERGEST_TYPE_TRANSMIT);
 #if 1
 		*MACA_CONTROL = ( ( 4 << PRECOUNT) |
@@ -604,7 +579,7 @@ void tx_packet(volatile packet_t *p) {
 	}
 
 //	print_packets("tx packet");
-//DEBUGFLOW('Q');
+
 	irq_restore();
 	/* Force interrupt unless an action complete interrupt is pending */
 	if(last_post == NO_POST) { *INTFRC = (1<<INT_NUM_MACA); }
@@ -912,7 +887,6 @@ void maca_isr(void) {
 			GPIO->DATA_RESET.GPIO_43 = 1;
 			if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
 				GPIO->DATA_SET.GPIO_06 = 1;
-				DEBUGFLOW('j');
 				maca_busy = 1;				
 				last_post = NO_POST;
 			} else {
@@ -1053,8 +1027,8 @@ actioncomplete:
 //		maca_busy = 0;  //probably wont work, rx post will interrupt before cca() sees it
 
 		if  ((unsigned int)((*MACA_STATUS)&0xf) !=0) {
-//A=success  C=Channel busy E=aborted F=noack M=pll unlock O=not completed
-			if (!((last_post==CCA_POST)&&((unsigned int)(*MACA_STATUS)&0xf) ==2)) {
+//A=success  C=Channel busy (normal on cca) E=aborted F=noack (normal on tx) M=pll unlock O=not completed
+			if (!(((last_post==TX_POST) && (((unsigned int)*MACA_STATUS&0xf)==5)) || ((last_post==CCA_POST)&&(((unsigned int)(*MACA_STATUS)&0xf) ==2)))) {
 				DEBUGFLOW('(');DEBUGFLOW('A'+((unsigned int)(*MACA_STATUS)&0xf));DEBUGFLOW(')');
 			}
 		}
@@ -1342,6 +1316,8 @@ const uint32_t addr_reg_rep[MAX_DATA] = { 0x80004118,0x80009204,0x80009208,0x800
 
 const uint32_t data_reg_rep[MAX_DATA] = { 0x00180012,0x00000605,0x00000504,0x00001111,0x0fc40000,0x20046000,0x4005580c,0x40075801,0x4005d801,0x5a45d800,0x4a45d800,0x40044000,0x00106000,0x00083806,0x00093807,0x0009b804,0x000db800,0x00093802,0x00000015,0x00000002,0x0000000f,0x0000aaa0,0x01002020,0x016800fe,0x8e578248,0x000000dd,0x00000946,0x0000035a,0x00100010,0x00000515,0x00097feb,0x00180358,0x00000455,0x00000001,0x00020003,0x00040014,0x00240034,0x00440144,0x02440344,0x04440544,0x0ee7fc00,0x00000082,0x0000002a };
 
+volatile static uint32_t savepanid,saveaddr,savemachi,savemaclo;
+
 void maca_off(void) {
 
 	/* Stay on if busy */
@@ -1350,20 +1326,26 @@ void maca_off(void) {
 		return;
 	}
 	disable_irq(MACA);
-	ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
-	
-	/* contikimac does an off() after unicast xmit before on() cca is complete */
+
 	if (last_post == CCA_POST) { 
 		DEBUGFLOW('?');
 		ENERGEST_OFF(ENERGEST_TYPE_LED_YELLOW);
 	}
-
+#if 0	
+	/* Save registers that will be lost on powerdown */
+	savepanid = *MACA_MACPANID;
+	saveaddr  = *MACA_MAC16ADDR;
+	savemachi = *MACA_MAC64HI;
+	savemaclo = *MACA_MAC64LO;
+#endif	
 	/* turn off the radio regulators */
 	reg(0x80003048) =  0x00000f00;
 
 	/* hold the maca in reset */
 	maca_reset = maca_reset_rst;
 	maca_pwr = 0;
+	
+	ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
 }
 
 void maca_on(void) {
@@ -1379,24 +1361,34 @@ void maca_on(void) {
 
 	maca_pwr = 1;
 
-	/* May not be necessary? */
+//	printf("%x %x %x %x",*MACA_MACPANID,*MACA_MAC16ADDR,*MACA_MAC64HI,*MACA_MAC64LO);
+#if 0
+	/* Restore registers that were lost on powerdown */
+	*MACA_MACPANID  = savepanid;
+	*MACA_MAC16ADDR = saveaddr;
+	*MACA_MAC64HI   = savemachi;
+	*MACA_MAC64LO   = savemaclo;
+#elif 0
 	*MACA_MACPANID = 0xcdab; /* this is the hardcoded contiki pan, register is
 				    PACKET order */
 	*MACA_MAC16ADDR = 0xffff; /* short addressing isn't used, set this to 0xffff
 				     for now */
 	*MACA_MAC64HI= mac_hi;
 	*MACA_MAC64LO = mac_lo;
-	
+#endif
 	while (!((*(volatile uint32_t *)0x80003018) & (1<< 19))    ) {} //wait for vreg_1P5V_RDY
 
-/* Start with a cca but don't wait till finished */
-	do_cca=1;
 	last_post = NO_POST;
-
-	/* Force an interrupt to get the cca posted */
 	*MACA_CLRIRQ = 0xffff;
 	enable_irq(MACA);
-	*INTFRC = (1 << INT_NUM_MACA);
+
+	/* If called with do_cca=-1 (contiki_maca_transmit) return without posting cca */
+	/* Else  with a cca but don't wait till finished */
+
+	if(do_cca<0) do_cca=0; else {
+		do_cca=1;
+		*INTFRC = (1 << INT_NUM_MACA);
+	}
 }
 
 /* initialized with 0x4c */

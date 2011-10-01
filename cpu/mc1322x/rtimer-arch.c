@@ -113,23 +113,40 @@ rtimer_arch_init(void)
 void
 rtimer_arch_schedule(rtimer_clock_t t)
 {
-	volatile uint32_t now;
-	now = rtimer_arch_now();
+	uint32_t now = rtimer_arch_now();
 	PRINTF("rtimer_arch_schedule time %u; now is %u\n", t,now);
-
+	
+	/* This is typically called with rtimer_now() + desired_delta_t
+	/* If the sum wraps around t will be in the past. However if a short interval was requested, a
+	 * higher priority interrupt that occurs between the calling routine and here can also send
+	 * t into the past, or rarely an rtimer wraparound that puts it into the distant future.
+	 * A real fix would pass the rtimer_now of the call along with the desired delta t,
+	 * then the two could be added here for comparison with the current time.
+	 * A temporary fix is to schedule the timer interrupt immediately if wraparound was unlikely. 
+	 */
 #if 1
-/* If specified time is always in the future, counter can wrap without harm */
-	*CRM_RTC_TIMEOUT = t - now;
-#else
-/* Immediate interrupt if specified time is before current time. This may also
-   happen on counter overflow. */
-	if(now>t) {
-		*CRM_RTC_TIMEOUT = 1;
-	} else {
-		*CRM_RTC_TIMEOUT = t - now;
+	if (t == now) {				//timeout is due
+			DEBUGFLOW('@');DEBUGFLOW('@');DEBUGFLOW('@');
+		t = 1;					//not sure zero timeout is a good idea
+	} else if (t > now) {		//t apparently in the future
+		t -= now;				//compute delta t
+		if (t > 0x7fffffff) {	//a really long time was requested
+			DEBUGFLOW('!');DEBUGFLOW('!');DEBUGFLOW('!');
+			t = 1;				//assume rtimer wraparound from interrupt delay
+		}
+	} else {					//t apparently in the past
+		t += 0xffffffff - now;	//compute delta t assuming rtimer wraparound
+		if (t > 0x7fffffff) {	//a really long time was requested
+			DEBUGFLOW('#');DEBUGFLOW('#');DEBUGFLOW('#');
+			t = 1;				//assume interrupt delay
+		}
 	}
+#else
+	/* The above simplifies */
+	t = t - now;
+	if ((t == 0) || (t > 0x7fffffff)) t = 1;
 #endif
-
+	*CRM_RTC_TIMEOUT = t;
 	clear_rtc_wu_evt();
 	enable_rtc_wu();
 	enable_rtc_wu_irq();

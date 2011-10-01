@@ -84,7 +84,7 @@ uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 #define STAMPS 60
 #define STACKMONITOR 600
 //#define HEAPMONITOR 60
-uint16_t clocktime;
+uint32_t clocktime;
 #define TESTRTIMER 0
 #if TESTRTIMER
 uint8_t rtimerflag=1;
@@ -691,6 +691,7 @@ bit 18-19  11          ????????
       rtimerflag=0;
 #else
   if (clocktime!=clock_seconds()) {
+ // 	printf("%x %x %x %x",*MACA_MACPANID,*MACA_MAC16ADDR,*MACA_MAC64HI,*MACA_MAC64LO);
      clocktime=clock_seconds();
 #endif
 

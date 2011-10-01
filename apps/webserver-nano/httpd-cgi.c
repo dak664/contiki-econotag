@@ -554,6 +554,7 @@ generate_sensor_readings(void *arg)
 
   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor2, sensor_extvoltage);
 //   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensr12, sensor_temperature,sensor_extvoltage);
+
 #if RADIOSTATS
   /* Remember radioontime for display below - slow connection might make it report longer than cpu ontime! */
   savedradioontime = radioontime;
@@ -580,6 +581,46 @@ generate_sensor_readings(void *arg)
     s=s-m*60;
     numprinted+=httpd_snprintf((char *)uip_appdata + numprinted, uip_mss() - numprinted, httpd_cgi_sensor4, h,m,s,p1);
   }
+#endif
+#if ENERGEST_CONF_ON
+{uint8_t p1,p2;
+#if 0
+uint8_t i;
+/* Update the timers to get current values */
+  for (i=1;i<ENERGEST_TYPE_MAX;i++) {
+    if (energest_current_mode[i]) {
+      ENERGEST_OFF(i);
+      ENERGEST_ON(i);
+    }
+#endif
+  static const char httpd_cgi_sensor10[] HTTPD_STRING_ATTR = "<em>Radio rx time  :</em> %02d:%02d:%02d (%d.%02d%%)  ";
+  static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "<em>tx time  :</em> %02d:%02d:%02d (%d.%02d%%)<br>";
+//    static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "<em>Packets:</em> Tx=%5d Rx=%5d TxL=%5d RxL=%5d RSSI=%2ddBm\n";
+  s=energest_total_time[ENERGEST_TYPE_LISTEN].current/RTIMER_ARCH_SECOND;
+  h=s*10000/seconds;
+  p1=h/100;
+  p2=h-p1*100;
+  h=s/3600;
+  s=s-h*3600;
+  m=s/60;
+  s=s-m*60;
+  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor10, h,m,s,p1,p2);
+    if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+  else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
+  else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
+  s=energest_total_time[ENERGEST_TYPE_TRANSMIT].current/RTIMER_ARCH_SECOND;
+  h=s*10000/seconds;
+  p1=h/100;
+  p2=h-p1*100;
+  h=s/3600;
+  s=s-h*3600;
+  m=s/60;
+  s=s-m*60;
+  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor11, h,m,s,p1,p2);
+    if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+  else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
+  else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
+}
 #endif
   return numprinted;
 

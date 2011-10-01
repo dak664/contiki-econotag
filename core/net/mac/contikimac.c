@@ -147,7 +147,6 @@ struct hdr {
 
 /* INTER_PACKET_INTERVAL is the interval between two successive packet transmissions */
 #define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 5000
-//#define INTER_PACKET_INTERVAL              RTIMER_ARCH_SECOND / 500
 
 /* AFTER_ACK_DETECTECT_WAIT_TIME is the time to wait after a potential
    ACK packet has been detected until we can read it out from the
@@ -178,7 +177,7 @@ static volatile uint8_t contikimac_keep_radio_on = 0;
 static volatile unsigned char we_are_sending = 0;
 static volatile unsigned char radio_is_on = 0;
 
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)
@@ -408,7 +407,6 @@ powercycle(struct rtimer *t, void *ptr)
             silence_periods = 0;
           }
           if(silence_periods > MAX_SILENCE_PERIODS) {
-	DEBUGFLOW('F');
             powercycle_turn_radio_off();
             break;
           }
@@ -416,12 +414,10 @@ powercycle(struct rtimer *t, void *ptr)
              periods > MAX_NONACTIVITY_PERIODS &&
              !(NETSTACK_RADIO.receiving_packet() ||
                NETSTACK_RADIO.pending_packet())) {
-			 	DEBUGFLOW('G');
             powercycle_turn_radio_off();
             break;
           }
           if(NETSTACK_RADIO.pending_packet()) {
-	//	  			   	DEBUGFLOW('P');
             break;
           }
           
@@ -433,7 +429,6 @@ powercycle(struct rtimer *t, void *ptr)
                NETSTACK_RADIO.pending_packet()) ||
              !RTIMER_CLOCK_LT(RTIMER_NOW(),
                               (start + LISTEN_TIME_AFTER_PACKET_DETECTED))) {
-	//						  				DEBUGFLOW('H');
             powercycle_turn_radio_off();
           }
         }
@@ -660,7 +655,6 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
       on();
       while(RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + CCA_CHECK_TIME)) { }
       if(NETSTACK_RADIO.channel_clear() == 0) {
-	DEBUGFLOW('B');
         collisions++;
         off();
         break;
@@ -680,9 +674,12 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr)
     return MAC_TX_COLLISION;
   }
 
+#if 0
   if(!is_broadcast) {
-    on();  //This does a cca on the econotag
+  //I suspect this radio on is to receive unicast ack. Not necessary with hardware ack detection
+     on();  //This does a cca on the econotag
   }
+#endif
   
   watchdog_periodic();
   t0 = RTIMER_NOW();
@@ -810,7 +807,7 @@ input_packet(void)
 {
   /* We have received the packet, so we can go back to being
      asleep. */
-  off();  //or maybe here?
+  off();  //cancels econotag startup cca?
 
   /*  printf("cycle_start 0x%02x 0x%02x\n", cycle_start, cycle_start % CYCLE_TIME);*/
   

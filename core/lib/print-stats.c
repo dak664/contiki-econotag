@@ -83,7 +83,7 @@ print_stats(void)
 }
 }
 #endif
-#if ENERGEST_CONF_ON || 1
+#if ENERGEST_CONF_ON && 1
 static uint8_t flag;
 if (flag==0) {
 	flag=1;
@@ -101,6 +101,7 @@ uint32_t displaytime=DISPLAYTIME;
 	((energest_total_time[ENERGEST_TYPE_LED_YELLOW].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
 	((energest_total_time[ENERGEST_TYPE_LED_RED].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
 	((energest_total_time[ENERGEST_TYPE_TRANSMIT].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+//	energest_total_time[ENERGEST_TYPE_LISTEN].current*10000ULL/(displaytime*RTIMER_ARCH_SECOND),
 	((energest_total_time[ENERGEST_TYPE_LISTEN].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
 	 energest_total_time[ENERGEST_TYPE_SENSORS].current,
 	 energest_total_time[ENERGEST_TYPE_SERIAL].current);
