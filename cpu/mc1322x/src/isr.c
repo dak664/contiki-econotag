@@ -36,6 +36,7 @@
 #include <mc1322x.h>
 #include <stdint.h>
 
+/* Contiki ENERGEST macros can be implemented */
 #if ENERGEST_CONF_ON || 1
 #include "sys/energest.h"
 #else

@@ -42,6 +42,7 @@
 #include "sys/process.h"
 #include "net/packetbuf.h"
 #include "net/netstack.h"
+#include "net/rime/rimestats.h"
 
 #include "mc1322x.h"
 #include "contiki-conf.h"
@@ -107,14 +108,10 @@ int contiki_maca_init(void) {
 
 int contiki_maca_channel_clear(void) {
 	return cca();
-//	return 1;
 }
 
-/* not sure how to check if a reception is in progress */
-extern int maca_receiving;
 int contiki_maca_receiving_packet(void) {
 return (maca_receiving);
-	return 0;
 }
 
 int contiki_maca_pending_packet(void) {
@@ -146,6 +143,7 @@ int contiki_maca_read(void *buf, unsigned short bufsize) {
 	
 	if((p = rx_packet())) {
 		PRINTF("maca read");
+		RIMESTATS_ADD(llrx);
 #if CONTIKI_MACA_RAW_MODE
 		/* offset + 1 and size - 1 to strip the raw mode prepended byte */
 		/* work around since maca can't receive acks bigger than five bytes */
@@ -179,6 +177,7 @@ int contiki_maca_prepare(const void *payload, unsigned short payload_len) {
 	volatile int i;
 		
 	PRINTF("contiki maca prepare");
+	RIMESTATS_ADD(lltx);
 #if CONTIKI_MACA_RAW_MODE
 	prepped_p.offset = 1;
 	prepped_p.length = payload_len + 1;
@@ -186,7 +185,7 @@ int contiki_maca_prepare(const void *payload, unsigned short payload_len) {
 	prepped_p.offset = 0;
 	prepped_p.length = payload_len;
 #endif
-	if(payload_len > MAX_PACKET_SIZE)  return RADIO_TX_ERR;
+	if(payload_len > MAX_PACKET_SIZE)  {RIMESTATS_ADD(toolong);return RADIO_TX_ERR;}
 	memcpy((uint8_t *)(prepped_p.data + prepped_p.offset), payload, payload_len);
 #if CONTIKI_MACA_RAW_MODE
 	prepped_p.offset = 0;
@@ -219,7 +218,6 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 	/* Turn radio on if necessary, cancelling initial cca */
 	if(maca_pwr == 0) 
 	{
-extern volatile uint8_t do_cca;
 		do_cca = -1;
 		maca_on();
 	}
@@ -231,7 +229,9 @@ extern volatile uint8_t do_cca;
 		       (const uint8_t *)(prepped_p.data + prepped_p.offset), 
 		       prepped_p.length);
 		tx_packet(p);
+		RIMESTATS_ADD(tx);
 	} else {
+		RIMESTATS_ADD(sendingdrop);
 		PRINTF("couldn't get free packet for transmit\n\r");
 		return RADIO_TX_ERR;
 	}
@@ -248,11 +248,16 @@ int contiki_maca_send(const void *payload, unsigned short payload_len) {
 	contiki_maca_transmit(payload_len);
 	switch(tx_status) {
 	case SUCCESS:
-	case CRC_FAILED: /* CRC_FAILED is usually an ack */
 		PRINTF("TXOK\n\r");
+		RIMESTATS_ADD(acktx);
+		return RADIO_TX_OK;
+	case CRC_FAILED: /* CRC_FAILED is usually an ack */
+		PRINTF("TXCRCERR\n\r");
+		RIMESTATS_ADD(badcrc);
 		return RADIO_TX_OK;
 	case NO_ACK:
 		PRINTF("NOACK\n\r");
+		RIMESTATS_ADD(noacktx);
 		return RADIO_TX_NOACK;
 	default:
 		PRINTF("TXERR\n\r");
@@ -293,16 +298,8 @@ void maca_rx_callback(volatile packet_t *p __attribute((unused))) {
 	process_poll(&contiki_maca_process);
 }
 
-#define DEBUGFLOWSIZE 128
-#if DEBUGFLOWSIZE
-extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
-#define DEBUGFLOW(c) {if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c;}
-#else
-#define DEBUGFLOW(c)
-#endif
 #if BLOCKING_TX
 void maca_tx_callback(volatile packet_t *p __attribute((unused))) {
-//DEBUGFLOW('b');
 	tx_complete = 1;
 	tx_status = p->status;
 }
