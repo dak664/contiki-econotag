@@ -67,21 +67,40 @@
 #include "contiki-maca.h"
 #include "contiki-uart.h"
 
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
+
 /* Get periodic prints from idle loop, from clock seconds or rtimer interrupts */
 /* Use of rtimer will conflict with other rtimer interrupts such as contikimac radio cycling */
-#define PERIODICPRINTS 0
+#define PERIODICPRINTS 1
 #if PERIODICPRINTS
 //#define PINGS 64
-#define ROUTES 300
+#define ROUTES 1200
 #define STAMPS 60
-#define STACKMONITOR 600
+#define STACKMONITOR 1200
 //#define HEAPMONITOR 60
-uint16_t clocktime;
+uint32_t clocktime;
 #define TESTRTIMER 0
 #if TESTRTIMER
 uint8_t rtimerflag=1;
 struct rtimer rt;
-void rtimercycle(void) {rtimerflag=1;}
+static uint8_t rtimerphase;
+void rtimercycle(void) {
+	rtimerflag=1;
+	if (rtimerphase) {
+		rtimerphase=0;
+		NETSTACK_RADIO.off();
+	} else {
+		rtimerphase=1;
+		NETSTACK_RADIO.on();
+	}
+	if (cca()==0) printf("Busy\n");//else printf("Idle\n");
+}
 #endif
 #endif
 
@@ -204,6 +223,9 @@ init_lowlevel(void)
 	default_vreg_init();
 
 	maca_init();
+
+        //make maca a fast interrupt
+	*((volatile uint32_t *) (0x80020014)) = (1 << 7);
 
 	set_channel(RF_CHANNEL - 11); /* channel 11 */
 	set_power(0x12); /* 0x12 is the highest, not documented */
@@ -379,11 +401,27 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	clock_init();	
 
 	/* LED driver */
-	leds_init();
+//	leds_init();
 
-	/* control TX_ON with the radio */
-	GPIO->FUNC_SEL.GPIO_44 = 2;
-	GPIO->PAD_DIR.GPIO_44 = 1;
+	/* red/green LED control */
+	GPIO->PAD_DIR.GPIO_44 = 1;  //enable red LED output pin
+//	GPIO->FUNC_SEL.GPIO_44 = 0; //manual control (default)
+	GPIO->FUNC_SEL.GPIO_44 = 1; //red driven by radio tx state
+
+
+	GPIO->PAD_DIR.GPIO_45 = 1;  //enable green LED output pin
+//	GPIO->FUNC_SEL.GPIO_45 = 0;  //manual (mac turns on when receiving packet) (Default)
+//	GPIO->FUNC_SEL.GPIO_45 = 1;  //green driven by radio rx state (annoying with rdc)
+
+	/* debug io */
+	GPIO->PAD_DIR_SET.GPIO_43 = 1;
+	GPIO->DATA_RESET.GPIO_43 = 1;
+
+	GPIO->PAD_DIR_SET.GPIO_04 = 1;
+	GPIO->DATA_RESET.GPIO_04 = 1;
+
+	GPIO->PAD_DIR_SET.GPIO_06 = 1;
+	GPIO->DATA_RESET.GPIO_06 = 1;
 
 	/* Process subsystem */
 	process_init();
@@ -480,9 +518,6 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	  addr.u8[5] << 16 |
 	  addr.u8[6] << 8 |
 	  addr.u8[7];
-  PRINTF("setting panid 0x%04x\n\r", *MACA_MACPANID);
-  PRINTF("setting short mac 0x%04x\n\r", *MACA_MAC16ADDR);
-  PRINTF("setting long mac 0x%08x_%08x\n\r", *MACA_MAC64HI, *MACA_MAC64LO);
 
 #if MACA_AUTOACK
   set_prm_mode(AUTOACK);
@@ -530,11 +565,94 @@ uint32_t p=(uint32_t)&__heap_end__-4;
   
   print_processes(autostart_processes);
   autostart_start(autostart_processes);
- 
+//  NETSTACK_RDC.off(1); //turn off RDC for testing
+  
+#if 0
+{uint32_t i;char byte;
+   for (i = 0; i < 0x14000; i++) {
+ //     for (i = 0; i < 0x140; i++) {
+	memcpy(&byte, (void *)i, 1);
+	printf("%c",byte);
+//	if ((i%10)==0) printf("\n");
+}}
+#endif
+
   /* Main scheduler loop */
   while(1) {
-	  check_maca();
+	  volatile uint8_t i;
+	  //Border router hangs after a send broadcast after a while
+//	  check_maca();
+#if 0
+{static volatile uint32_t counter=0,counter2;
+//while (1) {
+if (counter++>1000) {
+	counter=0;
+	//printf("%3u %3u ",(*((volatile uint32_t *)(0x80009490))>>16)&0xff,*((volatile uint32_t *)(0x80009490))&0xff);//counts up, current rssi?
+	if (counter2++>100) {
+	counter2=0;
+	NETSTACK_RADIO.off();
+		NETSTACK_RADIO.on();
+	if (cca()==0) printf("Busy ");
+	if (debugflowsize) {
+	 printf("%u\n",*((volatile uint32_t *)(0x80009490))&0xff);//current rssi, I think
+ //  *((volatile uint32_t *)(0x80009460))=(*((volatile uint32_t *)(0x80009460))&0xffc03fff) | 0x0000C000;  gives no busy
+  //  *((volatile uint32_t *)(0x80009460))=(*((volatile uint32_t *)(0x80009460))&0xffc03fff) | 0x000FC000;  gives no busy
+ //  *((volatile uint32_t *)(0x80009460))=0x00003ff0;  //gives no busy
+//   *((volatile uint32_t *)(0x80009460))=0x00003ffb;  //gives no busy
+//	*((volatile uint32_t *)(0x80009460))=0x00007feb;  //gives busy below 70
+//	*((volatile uint32_t *)(0x80009460))=0x0000ffeb;     //no busy
+//	*((volatile uint32_t *)(0x80009460))=0x00017feb;     //busy below 70
+//	*((volatile uint32_t *)(0x80009460))=0x00097feb;     //about right, busy when jackdaw sneezing 2 meters away at -17.2dBm
+//	*((volatile uint32_t *)(0x80009460))=0x0009ffeb;     //never busy
+//	printf("%08x\n",*((volatile uint32_t *)(0x80009460)));//tx_agc_cca_Ed_adr
+#if 0
+reset is     0x000003ff0
+it is set to 0x000397feb in the maca_init routine.
+ 11100101 1111111110 10 1 1
+bit 0      1 reserved??????
+bit 1      1 cca enable
+bit 2-3   10 cca mode as defined in 802.15.4 spec
+bit 4-13  1111111110  (data sheet says 4-14) measure period = 1022 cycles of 8MHz clock = 128 microseconds
+bit 14-21 11100101  energy detect threshold = 229
+bit 22    0  disable energy detect
+#endif		
+		
+		
+//	printf("%08x\n",*((volatile uint32_t *)(0x80009464)));//rx_agc_rssi_adr
+#if 0
+0x000180358
+11 000000000 1101011000
+bit 0-9    1101011000  rssi_sensitivity_plus10 856
+bit 10-17  00000000     rssi_adjust
+bit 18-19  11          ????????
+#endif
+//  printf("%u %u",*((volatile uint32_t *)(0x80009490))&0xff,*((volatile uint32_t *)(0x80009498))&0xff); 93-122, 0	
+//	printf("%u %u",(*((volatile uint32_t *)(0x80009490))>>16)&0xff,(*((volatile uint32_t *)(0x80009498))>>16)&0xff);//counts up, zero
+//	printf("%u %u",*((volatile uint32_t *)(0x8000948c))&0xff,*((volatile uint32_t *)(0x80009494))&0xff); //nonzero after a tx
+//	printf("%u %u",(*((volatile uint32_t *)(0x8000948c))>>16)&0xff,(*((volatile uint32_t *)(0x80009494))>>16)&0xff);//0,0
+//	printf("%u %u",(*((volatile uint32_t *)(0x8000401c))>>16)&0xff,*((volatile uint32_t *)(0x8000401c))&0xff);//0,0 supposed to be maca_Edvalue
+//	printf("%u %u",(*((volatile uint32_t *)(0x8000401c))>>16)&0xff,*((volatile uint32_t *)(0x8000401c))&0xff);//0,0 supposed to be maca_Edvalue
+//	  
+//	  int yes=*((volatile uint32_t *)(0x80009490))&0xff ; //current rssi
+//	   	  	    printf("%u %u ",*((volatile uint32_t *)(0x80009490))&0xff,(*((volatile uint32_t *)(0x80009490))>>16)&0xff); //current rssi 90-140
+//	  	  int yes=*((volatile uint32_t *)(0x80009498))&0xff ;  //rssi of last rx packet?
+//	  	  int yes=*((volatile uint32_t *)(0x80009494))&0xff ;  //?
+	//  	  int yes=*((volatile uint32_t *)(0x8000948C))&0xff ;  //rssi of last rx packet
+//		  	  	  int yes=*((volatile uint32_t *)(0x80009488))&0xff ;  //always 0
+	  //	  int yes=*((volatile uint32_t *)(0x8000401c))&0xff ;  //changes with cca and rx
 
+//		if (debugflowsize>8) {
+		debugflow[debugflowsize]=0;
+		printf("%s",debugflow);
+		printf("\n");
+//		}
+		debugflowsize=0;
+	}
+}
+}
+}
+//}
+#endif
 #if (USE_WDT == 1)
 	  cop_service();
 #endif
@@ -546,7 +664,15 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 	  }
 	         
 	  process_run();
+#if DEBUGFLOWSIZE
 
+	  if (debugflowsize) {
+		debugflow[debugflowsize]=0;
+		printf("%s",debugflow);
+		printf("\n");
+		debugflowsize=0;
+	  }
+#endif
 #if PERIODICPRINTS
 #if TESTRTIMER
 /* Timeout can be increased up to 8 seconds maximum.
@@ -558,6 +684,7 @@ uint32_t p=(uint32_t)&__heap_end__-4;
       rtimerflag=0;
 #else
   if (clocktime!=clock_seconds()) {
+ // 	printf("%x %x %x %x",*MACA_MACPANID,*MACA_MAC16ADDR,*MACA_MAC64HI,*MACA_MAC64LO);
      clocktime=clock_seconds();
 #endif
 
@@ -565,10 +692,8 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 if ((clocktime%STAMPS)==0) {
 #if ENERGEST_CONF_ON
 #include "lib/print-stats.h"
+
 	print_stats();
-#elif RADIOSTATS
-extern volatile unsigned long radioontime;
-  printf("\r%u(%u)s ",clocktime,radioontime);
 #else
   printf("%us\n",clocktime);
 #endif

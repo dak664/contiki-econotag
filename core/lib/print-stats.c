@@ -46,19 +46,24 @@
 #include <stdio.h>
 
 #ifdef __AVR__
+/* AVR clock_time() is only 16 bit, time would wrap in ~500 seconds */
+/* Might as well use program flash while we are dirtying the core */
 #include <avr/pgmspace.h>
 #define PRINTA(FORMAT,args...) printf_P(PSTR(FORMAT),##args)
+#define DISPLAYTIME clock_seconds()
 #else
 #define PRINTA(...) printf(__VA_ARGS__)
+#define DISPLAYTIME (unsigned long)clock_time() / CLOCK_SECOND
 #endif
 
 /*---------------------------------------------------------------------------*/
 void
 print_stats(void)
 {
+#if RIMESTATS_CONF_ON || 1
   PRINTA("S %d.%d clock %lu tx %lu rx %lu rtx %lu rrx %lu rexmit %lu acktx %lu noacktx %lu ackrx %lu timedout %lu badackrx %lu toolong %lu tooshort %lu badsynch %lu badcrc %lu contentiondrop %lu sendingdrop %lu lltx %lu llrx %lu\n",
 	 rimeaddr_node_addr.u8[0], rimeaddr_node_addr.u8[1],
-	 clock_seconds(),
+	 DISPLAYTIME,
 	 rimestats.tx, rimestats.rx,
 	 rimestats.reliabletx, rimestats.reliablerx,
 	 rimestats.rexmit, rimestats.acktx, rimestats.noacktx,
@@ -67,10 +72,48 @@ print_stats(void)
 	 rimestats.badsynch, rimestats.badcrc,
 	 rimestats.contentiondrop, rimestats.sendingdrop,
 	 rimestats.lltx, rimestats.llrx);
+#endif
+
 #if ENERGEST_CONF_ON
+uint32_t displaytime=DISPLAYTIME;
+{
+uint8_t i;
+/* Update the counters for proper display */
+  for (i=1;i<ENERGEST_TYPE_MAX;i++) {
+    if (energest_current_mode[i]) {
+      ENERGEST_OFF(i);
+      ENERGEST_ON(i);
+    }
+  }
+ }
+#if 1
+{
+static uint8_t flag;
+  if (flag==0) {
+	flag=1;
+	PRINTA("*************************************\n");
+	PRINTA(" Times are in hundredths of a percent\n");
+	PRINTA("*************************************\n");
+  }
+
+  PRINTA(" %lu cpu %lu lpm %lu irq %lu gled %lu yled %lu rled %lu tx %lu listen %lu sensors %lu serial %lu\n",
+	 displaytime,
+	 energest_total_time[ENERGEST_TYPE_CPU].current,
+	 energest_total_time[ENERGEST_TYPE_LPM].current,
+	((energest_total_time[ENERGEST_TYPE_IRQ].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LED_GREEN].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LED_YELLOW].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_LED_RED].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	((energest_total_time[ENERGEST_TYPE_TRANSMIT].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+//	energest_total_time[ENERGEST_TYPE_LISTEN].current*10000ULL/(displaytime*RTIMER_ARCH_SECOND),
+	((energest_total_time[ENERGEST_TYPE_LISTEN].current*100)/RTIMER_ARCH_SECOND)*100/displaytime,
+	 energest_total_time[ENERGEST_TYPE_SENSORS].current,
+	 energest_total_time[ENERGEST_TYPE_SERIAL].current);
+}
+#else
   PRINTA("E %d.%d clock %lu cpu %lu lpm %lu irq %lu gled %lu yled %lu rled %lu tx %lu listen %lu sensors %lu serial %lu\n",
 	 rimeaddr_node_addr.u8[0], rimeaddr_node_addr.u8[1],
-	 clock_seconds(),
+	 DISPLAYTIME,
 	 energest_total_time[ENERGEST_TYPE_CPU].current,
 	 energest_total_time[ENERGEST_TYPE_LPM].current,
 	 energest_total_time[ENERGEST_TYPE_IRQ].current,
@@ -81,6 +124,7 @@ print_stats(void)
 	 energest_total_time[ENERGEST_TYPE_LISTEN].current,
 	 energest_total_time[ENERGEST_TYPE_SENSORS].current,
 	 energest_total_time[ENERGEST_TYPE_SERIAL].current);
+#endif
 #endif /* ENERGEST_CONF_ON */
 }
 /*---------------------------------------------------------------------------*/

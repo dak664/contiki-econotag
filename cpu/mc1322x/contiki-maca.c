@@ -43,6 +43,12 @@
 #include "net/packetbuf.h"
 #include "net/netstack.h"
 
+#if RIMESTATS_CONF_ON
+#include "net/rime/rimestats.h"
+#else
+#define RIMESTATS_ADD(...)
+#endif
+
 #include "mc1322x.h"
 #include "contiki-conf.h"
 
@@ -58,7 +64,7 @@
 #endif
 
 #ifndef BLOCKING_TX
-#define BLOCKING_TX 1
+#define BLOCKING_TX 0
 #endif
 
 static volatile uint8_t tx_complete;
@@ -91,8 +97,6 @@ const struct radio_driver contiki_maca_driver =
 	.off = contiki_maca_off_request,
 };
 
-static volatile uint8_t contiki_maca_request_on = 0;
-static volatile uint8_t contiki_maca_request_off = 0;
 
 static process_event_t event_data_ready;
 
@@ -107,14 +111,12 @@ int contiki_maca_init(void) {
 	return 1;
 }
 
-/* CCA not implemented */
 int contiki_maca_channel_clear(void) {
-	return 1;
+	return cca();
 }
 
-/* not sure how to check if a reception is in progress */
 int contiki_maca_receiving_packet(void) {
-	return 0;
+return (maca_receiving);
 }
 
 int contiki_maca_pending_packet(void) {
@@ -126,14 +128,14 @@ int contiki_maca_pending_packet(void) {
 }
 
 int contiki_maca_on_request(void) {
-	contiki_maca_request_on = 1;
-	contiki_maca_request_off = 0;
+	GPIO->DATA_SET.GPIO_04 = 1;
+	maca_on();
 	return 1;
 }
 
 int contiki_maca_off_request(void) {
-	contiki_maca_request_on = 0;
-	contiki_maca_request_off = 1;
+	GPIO->DATA_RESET.GPIO_04 = 1;
+	maca_off();
 	return 1;
 }
 
@@ -146,6 +148,7 @@ int contiki_maca_read(void *buf, unsigned short bufsize) {
 	
 	if((p = rx_packet())) {
 		PRINTF("maca read");
+//		RIMESTATS_ADD(rx);//counts acks as rx
 #if CONTIKI_MACA_RAW_MODE
 		/* offset + 1 and size - 1 to strip the raw mode prepended byte */
 		/* work around since maca can't receive acks bigger than five bytes */
@@ -179,6 +182,7 @@ int contiki_maca_prepare(const void *payload, unsigned short payload_len) {
 	volatile int i;
 		
 	PRINTF("contiki maca prepare");
+
 #if CONTIKI_MACA_RAW_MODE
 	prepped_p.offset = 1;
 	prepped_p.length = payload_len + 1;
@@ -186,7 +190,7 @@ int contiki_maca_prepare(const void *payload, unsigned short payload_len) {
 	prepped_p.offset = 0;
 	prepped_p.length = payload_len;
 #endif
-	if(payload_len > MAX_PACKET_SIZE)  return RADIO_TX_ERR;
+	if(payload_len > MAX_PACKET_SIZE)  {RIMESTATS_ADD(toolong);return RADIO_TX_ERR;}
 	memcpy((uint8_t *)(prepped_p.data + prepped_p.offset), payload, payload_len);
 #if CONTIKI_MACA_RAW_MODE
 	prepped_p.offset = 0;
@@ -215,6 +219,14 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 #if BLOCKING_TX
 	tx_complete = 0;
 #endif
+
+	/* Turn radio on if necessary, cancelling initial cca */
+	if(maca_pwr == 0) 
+	{
+		do_cca = -1;
+		maca_on();
+	}
+
 	if(p = get_free_packet()) {
 		p->offset = prepped_p.offset; 
 		p->length = prepped_p.length; 
@@ -223,13 +235,15 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 		       prepped_p.length);
 		tx_packet(p);
 	} else {
+		RIMESTATS_ADD(sendingdrop);
 		PRINTF("couldn't get free packet for transmit\n\r");
 		return RADIO_TX_ERR;
 	}
 
 #if BLOCKING_TX
 	/* block until tx_complete, set by contiki_maca_tx_callback */
- 	while(!tx_complete && (tx_head != 0));
+	/* Contikimac needs blocking tx for proper timing and to prevent strobe overrun */
+ 	while(maca_pwr && !tx_complete && (tx_head != 0));
 #endif	
 }
 
@@ -238,11 +252,16 @@ int contiki_maca_send(const void *payload, unsigned short payload_len) {
 	contiki_maca_transmit(payload_len);
 	switch(tx_status) {
 	case SUCCESS:
-	case CRC_FAILED: /* CRC_FAILED is usually an ack */
 		PRINTF("TXOK\n\r");
+//		RIMESTATS_ADD(acktx);
+		return RADIO_TX_OK;
+	case CRC_FAILED: /* CRC_FAILED is usually an ack */
+		PRINTF("TXCRCERR\n\r");
+//		RIMESTATS_ADD(badcrc);
 		return RADIO_TX_OK;
 	case NO_ACK:
 		PRINTF("NOACK\n\r");
+//		RIMESTATS_ADD(noacktx);
 		return RADIO_TX_NOACK;
 	default:
 		PRINTF("TXERR\n\r");
@@ -260,17 +279,6 @@ PROCESS_THREAD(contiki_maca_process, ev, data)
 
 	while (1) {
 		PROCESS_YIELD();
-
-		/* check if there is a request to turn the radio on or off */
-		if(contiki_maca_request_on == 1) {
-			contiki_maca_request_on = 0;
-//			maca_on();
- 		}
-
-		if(contiki_maca_request_off == 1) {
-			contiki_maca_request_off = 0;
-//			maca_off();
- 		}
 
 		if (rx_head != NULL) {
 			packetbuf_clear();
@@ -293,7 +301,6 @@ PROCESS_THREAD(contiki_maca_process, ev, data)
 void maca_rx_callback(volatile packet_t *p __attribute((unused))) {
 	process_poll(&contiki_maca_process);
 }
-
 
 #if BLOCKING_TX
 void maca_tx_callback(volatile packet_t *p __attribute((unused))) {

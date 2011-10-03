@@ -83,8 +83,8 @@
 #define MACA_DEBUG                  0
 #define CONTIKI_MACA_RAW_MODE       0
 #define USE_32KHZ_XTAL              0
-
-#define BLOCKING_TX 1
+/* Contikimac needs blocking tx for proper interpacket timing */
+#define BLOCKING_TX  1
 #define MACA_AUTOACK 1
 #define NULLRDC_CONF_802154_AUTOACK_HW 1
 
@@ -119,12 +119,14 @@ typedef unsigned long rtimer_clock_t;
 #if WITH_UIP6
 /* Network setup for IPv6 */
 #define NETSTACK_CONF_NETWORK sicslowpan_driver
-#define NETSTACK_CONF_MAC     nullmac_driver 
-/*#define NETSTACK_CONF_RDC     contikimac_driver*/ /* contikimac for redbee hasn't been well tested */
-#define NETSTACK_CONF_RDC     nullrdc_driver
+#define NETSTACK_CONF_MAC     csma_driver
+//#define NETSTACK_CONF_MAC     nullmac_driver  //does not do burst mode
+#define NETSTACK_CONF_RDC     contikimac_driver /* contikimac for redbee hasn't been well tested */
+//#define NETSTACK_CONF_RDC     nullrdc_driver
 #define NETSTACK_CONF_RADIO   contiki_maca_driver
 #define NETSTACK_CONF_FRAMER  framer_802154
 
+//#define NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE      8
 #define NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE      8
 #define RIME_CONF_NO_POLITE_ANNOUCEMENTS 0
 #define CXMAC_CONF_ANNOUNCEMENTS         0
@@ -168,7 +170,8 @@ typedef unsigned long rtimer_clock_t;
 #define IEEE802154_CONF_PANID       0xABCD
 
 #define PROFILE_CONF_ON 0
-#define ENERGEST_CONF_ON 0
+#define ENERGEST_CONF_ON 1
+#define RIMESTATS_CONF_ON 1
 
 #define AODV_COMPLIANCE
 #define AODV_NUM_RT_ENTRIES 32
@@ -227,8 +230,8 @@ typedef unsigned long rtimer_clock_t;
 
 #define UIP_CONF_DHCP_LIGHT
 #define UIP_CONF_LLH_LEN         0
-#define UIP_CONF_RECEIVE_WINDOW  48
-#define UIP_CONF_TCP_MSS         48
+//#define UIP_CONF_RECEIVE_WINDOW  48
+//#define UIP_CONF_TCP_MSS         48
 #define UIP_CONF_MAX_CONNECTIONS 4
 #define UIP_CONF_MAX_LISTENPORTS 8
 #define UIP_CONF_UDP_CONNS       12

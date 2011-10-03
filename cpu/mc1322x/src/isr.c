@@ -36,6 +36,14 @@
 #include <mc1322x.h>
 #include <stdint.h>
 
+/* Contiki ENERGEST macros can be implemented */
+#if ENERGEST_CONF_ON || 1
+#include "sys/energest.h"
+#else
+#define ENERGEST_ON(...)
+#define ENERGEST_OFF(...);
+#endif
+
 static void (*tmr_isr_funcs[4])(void) = {
 	tmr0_isr,
 	tmr1_isr,
@@ -49,11 +57,31 @@ void irq_register_timer_handler(int timer, void (*isr)(void))
 }
 
 
+__attribute__ ((section (".fiq")))
+__attribute__ ((interrupt("FIQ"))) 
+void fiq(void)
+{
+	uint32_t pending;
+	/* Red led for monitoring time spent in fast interrupts */
+	ENERGEST_ON(ENERGEST_TYPE_LED_RED);
+
+	while ((pending = *FIPEND)) {
+		if(bit_is_set(pending, INT_NUM_MACA)) {
+	 		if(maca_isr != 0) { maca_isr(); } 
+		}
+		*INTFRC = 0; /* stop forcing interrupts */
+	}	
+
+	ENERGEST_OFF(ENERGEST_TYPE_LED_RED);
+}
+
 __attribute__ ((section (".irq")))
 __attribute__ ((interrupt("IRQ"))) 
 void irq(void)
 {
 	uint32_t pending;
+
+	ENERGEST_ON(ENERGEST_TYPE_IRQ);
 
 	while ((pending = *NIPEND)) {
 		
@@ -68,9 +96,9 @@ void irq(void)
 			if (tmr_isr_funcs[3] != 0) { (tmr_isr_funcs[3])(); }
 		}
 
-		if(bit_is_set(pending, INT_NUM_MACA)) {
-	 		if(maca_isr != 0) { maca_isr(); } 
-		}
+//		if(bit_is_set(pending, INT_NUM_MACA)) {
+//	 		if(maca_isr != 0) { maca_isr(); } 
+//		}
 		if(bit_is_set(pending, INT_NUM_UART1)) {
 	 		if(uart1_isr != 0) { uart1_isr(); } 
 		}
@@ -100,4 +128,6 @@ void irq(void)
 		*INTFRC = 0; /* stop forcing interrupts */
 
 	}	
+	
+	ENERGEST_OFF(ENERGEST_TYPE_IRQ);
 }

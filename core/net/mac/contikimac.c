@@ -55,6 +55,18 @@
 
 #include <string.h>
 
+//#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
+#else
+#define DEBUGFLOW(c)
+#endif
+
+#define CONTIKIMAC_CONF_WITH_CONTIKIMAC_HEADER 0
+#define WITH_PHASE_OPTIMIZATION     0
+#define WITH_FAST_SLEEP              0
+
 #ifndef WITH_PHASE_OPTIMIZATION
 #define WITH_PHASE_OPTIMIZATION      1
 #endif
@@ -107,10 +119,12 @@ static int is_receiver_awake = 0;
 #define CCA_COUNT_MAX_TX                   6
 
 /* CCA_CHECK_TIME is the time it takes to perform a CCA check. */
-#define CCA_CHECK_TIME                     RTIMER_ARCH_SECOND / 8192
+//#define CCA_CHECK_TIME                     RTIMER_ARCH_SECOND / 8192
+#define CCA_CHECK_TIME                     RTIMER_ARCH_SECOND / 7407  //econotag
 
 /* CCA_SLEEP_TIME is the time between two successive CCA checks. */
-#define CCA_SLEEP_TIME                     RTIMER_ARCH_SECOND / 2000
+//define CCA_SLEEP_TIME                     RTIMER_ARCH_SECOND / 2000
+#define CCA_SLEEP_TIME                     RTIMER_ARCH_SECOND / 6849  //econotag
 
 /* CHECK_TIME is the total time it takes to perform CCA_COUNT_MAX
    CCAs. */
@@ -151,7 +165,8 @@ static int is_receiver_awake = 0;
 /* AFTER_ACK_DETECTECT_WAIT_TIME is the time to wait after a potential
    ACK packet has been detected until we can read it out from the
    radio. */
-#define AFTER_ACK_DETECTECT_WAIT_TIME      RTIMER_ARCH_SECOND / 1500
+//#define AFTER_ACK_DETECTECT_WAIT_TIME      RTIMER_ARCH_SECOND / 1500
+#define AFTER_ACK_DETECTECT_WAIT_TIME      RTIMER_ARCH_SECOND / RTIMER_ARCH_SECOND  //econotag
 
 /* MAX_PHASE_STROBE_TIME is the time that we transmit repeated packets
    to a neighbor for which we have a phase lock. */
@@ -266,7 +281,7 @@ schedule_powercycle(struct rtimer *t, rtimer_clock_t time)
     r = rtimer_set(t, RTIMER_TIME(t) + time, 1,
                    (void (*)(struct rtimer *, void *))powercycle, NULL);
     if(r != RTIMER_OK) {
-      printf("schedule_powercycle: could not set rtimer\n");
+      PRINTF("schedule_powercycle: could not set rtimer\n");
     }
   }
 }
@@ -285,7 +300,7 @@ schedule_powercycle_fixed(struct rtimer *t, rtimer_clock_t fixed_time)
     r = rtimer_set(t, fixed_time, 1,
                    (void (*)(struct rtimer *, void *))powercycle, NULL);
     if(r != RTIMER_OK) {
-      printf("schedule_powercycle: could not set rtimer\n");
+      PRINTF("schedule_powercycle: could not set rtimer\n");
     }
   }
 }
@@ -335,6 +350,8 @@ powercycle(struct rtimer *t, void *ptr)
       t0 = RTIMER_NOW();
       if(we_are_sending == 0 && we_are_receiving_burst == 0) {
         powercycle_turn_radio_on();
+//	    while(RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + CCA_CHECK_TIME)) { } //dak its in the send routine so why not here
+
         /* Check if a packet is seen in the air. If so, we keep the
              radio on for a while (LISTEN_TIME_AFTER_PACKET_DETECTED) to
              be able to receive the packet. We also continuously check
@@ -367,12 +384,13 @@ powercycle(struct rtimer *t, void *ptr)
              received (as indicated by the
              NETSTACK_RADIO.pending_packet() function), we stop
              snooping. */
+#if 0		//econotag much better with this out
         if(NETSTACK_RADIO.channel_clear()) {
           ++silence_periods;
         } else {
           silence_periods = 0;
         }
-
+#endif
         ++periods;
 
         if(NETSTACK_RADIO.receiving_packet()) {
@@ -569,7 +587,8 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
      that we have a collision, which lets the packet be received. This
      packet will be retransmitted later by the MAC protocol
      instread. */
-  if(NETSTACK_RADIO.receiving_packet() || NETSTACK_RADIO.pending_packet()) {
+  if(NETSTACK_RADIO.receiving_packet() || NETSTACK_RADIO.pending_packet()) { 
+ //  if(NETSTACK_RADIO.receiving_packet() ) { //econotag ok if packet is pending
     we_are_sending = 0;
     PRINTF("contikimac: collision receiving %d, pending %d\n",
            NETSTACK_RADIO.receiving_packet(), NETSTACK_RADIO.pending_packet());
@@ -596,6 +615,8 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
 
   if(is_receiver_awake == 0) {
     /* Check if there are any transmissions by others. */
+#if 0  //seems like unnecessary delay, gives collisions before sending with the econotag, it is sending packets too fast
+
     for(i = 0; i < CCA_COUNT_MAX_TX; ++i) {
       t0 = RTIMER_NOW();
       on();
@@ -609,6 +630,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
       t0 = RTIMER_NOW();
       while(RTIMER_CLOCK_LT(RTIMER_NOW(), t0 + CCA_SLEEP_TIME)) { }
     }
+#endif
   }
 
   if(collisions > 0) {
@@ -618,11 +640,12 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
     contikimac_is_on = contikimac_was_on;
     return MAC_TX_COLLISION;
   }
-
+#if 0
   if(!is_broadcast) {
-    on();
+  //I suspect this radio on is to receive unicast ack. Not necessary with hardware ack detection
+     on();  //This does a cca on the econotag
   }
-
+#endif
   watchdog_periodic();
   t0 = RTIMER_NOW();
   seqno = packetbuf_attr(PACKETBUF_ATTR_MAC_SEQNO);
@@ -654,7 +677,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
 
       if(!is_broadcast && (NETSTACK_RADIO.receiving_packet() ||
                            NETSTACK_RADIO.pending_packet() ||
-                           NETSTACK_RADIO.channel_clear() == 0)) {
+                           NETSTACK_RADIO.channel_clear() == 0)) {  //clear not necessary on econotag
         uint8_t ackbuf[ACK_LEN];
         wt = RTIMER_NOW();
         while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + AFTER_ACK_DETECTECT_WAIT_TIME)) { }
@@ -750,12 +773,14 @@ qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
   if(we_are_receiving_burst) {
     queuebuf_to_packetbuf(curr->buf);
     /* We try to defer, and return an error this wasn't possible */
+#if WITH_PHASE_OPTIMIZATION
     int ret = phase_wait(&phase_list, packetbuf_addr(PACKETBUF_ADDR_RECEIVER),
         CYCLE_TIME, GUARD_TIME,
         sent, ptr, curr, 2);
     if(ret != PHASE_DEFERRED) {
       mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
     }
+#endif
     return;
   }
   /* The receiver needs to be awoken before we send */
