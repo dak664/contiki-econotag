@@ -96,9 +96,9 @@ void rtc_isr(void) {
     //    disable_irq(MACA);
         disable_rtc_wu();
         disable_rtc_wu_irq();
-        *CRM_RTC_TIMEOUT = rtimer_arch_now() + 1000;
+  //      *CRM_RTC_TIMEOUT = rtimer_arch_now() + 1000;
         clear_rtc_wu_evt();
-        while (rtc_wu_evt()) {};
+   //     while (rtc_wu_evt()) {};
   //      enable_irq(MACA);
         rtimer_run_next();
 	ENERGEST_OFF(ENERGEST_TYPE_LED_GREEN);
