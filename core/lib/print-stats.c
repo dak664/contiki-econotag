@@ -110,7 +110,7 @@ static uint8_t flag;
 	 energest_total_time[ENERGEST_TYPE_SENSORS].current,
 	 energest_total_time[ENERGEST_TYPE_SERIAL].current);
 }
-#else
+#elif 0
   PRINTA("E %d.%d clock %lu cpu %lu lpm %lu irq %lu gled %lu yled %lu rled %lu tx %lu listen %lu sensors %lu serial %lu\n",
 	 rimeaddr_node_addr.u8[0], rimeaddr_node_addr.u8[1],
 	 DISPLAYTIME,

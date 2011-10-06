@@ -47,6 +47,13 @@
 #include "sys/energest.h"
 #include "sys/compower.h"
 #include "net/packetbuf.h"
+#define DEBUGFLOWSIZE 128
+#if DEBUGFLOWSIZE
+extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
+#define DEBUGFLOW(c) {if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c;}
+#else
+#define DEBUGFLOW(c)
+#endif
 
 struct compower_activity compower_idle_activity;
 
@@ -56,6 +63,7 @@ compower_init(void)
 {
   compower_clear(&compower_idle_activity);
 }
+uint32_t testlong;
 /*---------------------------------------------------------------------------*/
 void
 compower_accumulate(struct compower_activity *e)
@@ -64,14 +72,21 @@ compower_accumulate(struct compower_activity *e)
   uint32_t listen, transmit;
 
   energest_flush();
-
-  listen = energest_type_time(ENERGEST_TYPE_LISTEN);
+ 
+ listen = energest_type_time(ENERGEST_TYPE_LISTEN);
   e->listen += listen - last_listen;
   last_listen = listen;
-
+  
   transmit = energest_type_time(ENERGEST_TYPE_TRANSMIT);
-  e->transmit += transmit - last_transmit;
+  /*TODO This line never changes e->transmit, why? */
+ // e->transmit += transmit - last_transmit;
+ /* Using an intermediate global works */
+  testlong+=transmit-last_transmit;
+  e->transmit =testlong;
+  
   last_transmit = transmit;
+
+
 }
 /*---------------------------------------------------------------------------*/
 void

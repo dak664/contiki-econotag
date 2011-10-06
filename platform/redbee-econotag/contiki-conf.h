@@ -51,6 +51,10 @@
 
 #include <stdint.h>
 
+#ifdef CONF_HEADER
+#include CONF_HEADER
+#endif
+
 /* mc1322x files */
 #include "contiki-mc1322x-conf.h"
 /* this is from cpu/mc1322x/board */
@@ -122,11 +126,11 @@ typedef unsigned long rtimer_clock_t;
 #define NETSTACK_CONF_MAC     csma_driver
 //#define NETSTACK_CONF_MAC     nullmac_driver  //does not do burst mode
 #define NETSTACK_CONF_RDC     contikimac_driver /* contikimac for redbee hasn't been well tested */
+#define CONTIKIMAC_CONF_COMPOWER  1
 //#define NETSTACK_CONF_RDC     nullrdc_driver
 #define NETSTACK_CONF_RADIO   contiki_maca_driver
 #define NETSTACK_CONF_FRAMER  framer_802154
 
-//#define NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE      8
 #define NETSTACK_CONF_RDC_CHANNEL_CHECK_RATE      8
 #define RIME_CONF_NO_POLITE_ANNOUCEMENTS 0
 #define CXMAC_CONF_ANNOUNCEMENTS         0
@@ -191,8 +195,8 @@ typedef unsigned long rtimer_clock_t;
 #define UIP_CONF_ROUTER                 1  
 #define UIP_CONF_IPV6_RPL               1
 
-#define UIP_CONF_DS6_NBR_NBU     30
-#define UIP_CONF_DS6_ROUTE_NBU   30
+#define UIP_CONF_DS6_NBR_NBU     3
+#define UIP_CONF_DS6_ROUTE_NBU   3
 
 #define UIP_CONF_ND6_SEND_RA		0
 #define UIP_CONF_ND6_REACHABLE_TIME     600000
@@ -250,5 +254,9 @@ typedef unsigned long rtimer_clock_t;
 #ifdef PROJECT_CONF_H
 #include PROJECT_CONF_H
 #endif /* PROJECT_CONF_H */
+
+#ifdef CONF_FOOTER
+#include CONF_FOOTER
+#endif
 
 #endif /* __CONTIKI_CONF_H__ */

@@ -150,6 +150,7 @@ should_send_dao(rpl_dag_t *dag, rpl_dio_t *dio, rpl_parent_t *p)
 static int
 acceptable_rank(rpl_dag_t *dag, rpl_rank_t rank)
 {
+return 1;
   return rank != INFINITE_RANK &&
     (dag->max_rankinc == 0 ||
      DAG_RANK(rank, dag) <= DAG_RANK(dag->min_rank + dag->max_rankinc, dag));

@@ -524,13 +524,14 @@ static unsigned short
 generate_sensor_readings(void *arg)
 {
   uint16_t numprinted;
-  uint16_t h,m,s;
+  uint16_t days,h,m,s;
   unsigned long seconds=clock_seconds();
   static const char httpd_cgi_sensor0[] HTTPD_STRING_ATTR = "[Updated %d seconds ago]<br><br>";
-  static const char httpd_cgi_sensor1[] HTTPD_STRING_ATTR = "<em>Temperature:</em> %s<br>";
-  static const char httpd_cgi_sensor2[] HTTPD_STRING_ATTR = "<em>Battery:</em> %s<br>";
+  static const char httpd_cgi_sensor1[] HTTPD_STRING_ATTR = "<pre><em>Temperature:</em> %s\n";
+  static const char httpd_cgi_sensor2[] HTTPD_STRING_ATTR = "<em>Battery    :</em> %s\n";
 //  static const char httpd_cgi_sensr12[] HTTPD_STRING_ATTR = "<em>Temperature:</em> %s   <em>Battery:</em> %s<br>";
-  static const char httpd_cgi_sensor3[] HTTPD_STRING_ATTR = "<em>Elapsed timer :</em> %02d:%02d:%02d<br>";
+  static const char httpd_cgi_sensor3[] HTTPD_STRING_ATTR = "<em>Uptime     :</em> %02d:%02d:%02d\n";
+  static const char httpd_cgi_sensor3d[] HTTPD_STRING_ATTR = "<em>Uptime    :</em> %u days %02u:%02u:%02u/n";
 // static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR = "<em>Sleeping time :</em> %02d:%02d:%02d (%d%%)<br>";
 
   numprinted=0;
@@ -559,15 +560,20 @@ generate_sensor_readings(void *arg)
   savedradioontime = radioontime;
 #endif
   h=seconds/3600;s=seconds-h*3600;m=s/60;s=s-m*60;
-  numprinted+=httpd_snprintf((char *)uip_appdata + numprinted, uip_mss() - numprinted, httpd_cgi_sensor3, h,m,s);
-
-/* TODO: some gcc's have a bug with %02d format that adds a zero byte and extra chars to the end of the string.
+  days=h/24;
+  if (days == 0) {
+    numprinted+=httpd_snprintf((char *)uip_appdata + numprinted, uip_mss() - numprinted, httpd_cgi_sensor3, h,m,s);
+  } else {
+  	h=h-days*24;	
+	numprinted+=httpd_snprintf((char *)uip_appdata + numprinted, uip_mss() - numprinted, httpd_cgi_sensor3d, days,h,m,s);
+  }
+/* TODO: some gcc's have a bug with %02d format that adds an extra char after the string terminator.
  * Seen with arm-none-eabi-gcc.exe (Sourcery G++ Lite 2008q3-66) 4.3.2
  * Quick cosmetic fix to strip that off: */
-  if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
-  else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
-  else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
-
+    if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+    else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
+    else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
+	
 #if 0
   if (sleepseconds) {
 	uint8_t p1;
@@ -578,6 +584,7 @@ generate_sensor_readings(void *arg)
 
 #if ENERGEST_CONF_ON
 {uint8_t p1,p2;
+#if 0
 /* Update all the timers to get current values */
   for (p1=1;p1<ENERGEST_TYPE_MAX;p1++) {
     if (energest_current_mode[p1]) {
@@ -585,30 +592,65 @@ generate_sensor_readings(void *arg)
       ENERGEST_ON(p1);
     }
   }
+#else
+  energest_flush();
+#endif
 
-  static const char httpd_cgi_sensor10[] HTTPD_STRING_ATTR = "<em>Radio rx time  :</em> %02d:%02d:%02d (%d.%02d%%)  ";
-  static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "<em>tx time  :</em> %02d:%02d:%02d (%d.%02d%%)<br>";
-  s=energest_total_time[ENERGEST_TYPE_LISTEN].current/RTIMER_ARCH_SECOND;
-  h=s*10000/seconds;p1=h/100;p2=h-p1*100;h=s/3600;s=s-h*3600;m=s/60;s=s-m*60;
+  static const char httpd_cgi_sensor10[] HTTPD_STRING_ATTR = "<em>Radio      (ENERGEST):</em> Tx %02u:%02u:%02u (%u.%02u%%)  ";
+  static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "Rx %02u:%02u:%02u (%u.%02u%%)\n";
+  s=energest_total_time[ENERGEST_TYPE_TRANSMIT].current/RTIMER_ARCH_SECOND;
+  h=((10000UL*energest_total_time[ENERGEST_TYPE_TRANSMIT].current)/RTIMER_ARCH_SECOND)/seconds;
+  p1=h/100;p2=h-p1*100;h=s/3600;s=s-h*3600;m=s/60;s=s-m*60;
   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor10, h,m,s,p1,p2);
-  if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+  if (*(char *)(uip_appdata + numprinted-4)==0) {numprinted-=4;}
+  else if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
   else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
   else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
-  s=energest_total_time[ENERGEST_TYPE_TRANSMIT].current/RTIMER_ARCH_SECOND;
-  h=s*10000/seconds;p1=h/100;p2=h-p1*100;h=s/3600;s=s-h*3600;m=s/60;s=s-m*60;
+  s=energest_total_time[ENERGEST_TYPE_LISTEN].current/RTIMER_ARCH_SECOND;
+  h=((10000UL*energest_total_time[ENERGEST_TYPE_LISTEN].current)/RTIMER_ARCH_SECOND)/seconds;
+  p1=h/100;p2=h-p1*100;h=s/3600;s=s-h*3600;m=s/60;s=s-m*60;
   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor11, h,m,s,p1,p2);
-  if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+  if (*(char *)(uip_appdata + numprinted-4)==0) {numprinted-=4;}
+  else if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
   else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
   else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
 }
 #endif /* ENERGEST_CONF_ON */
 
+#if CONTIKIMAC_CONF_COMPOWER
+#include "sys/compower.h"
+{uint8_t p1,p2;
+ // extern struct compower_activity current_packet;
+  static const char httpd_cgi_sensor31[] HTTPD_STRING_ATTR = "<em>ContikiMAC (COMPOWER):</em> Tx %02u:%02u:%02u (%u.%02u%%)  ";
+  static const char httpd_cgi_sensor32[] HTTPD_STRING_ATTR = "Rx %02u:%02u:%02u (%u.%02u%%)\n";
+
+  s=compower_idle_activity.transmit/RTIMER_ARCH_SECOND;
+  h=((10000UL*compower_idle_activity.transmit)/RTIMER_ARCH_SECOND)/seconds;
+  p1=h/100;p2=h-p1*100;h=s/3600;s=s-h*3600;m=s/60;s=s-m*60;
+  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor31, h,m,s,p1,p2);
+  if (*(char *)(uip_appdata + numprinted-4)==0) {numprinted-=4;}
+  else if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+  else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
+  else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
+  s=compower_idle_activity.listen/RTIMER_ARCH_SECOND;
+  h=((10000UL*compower_idle_activity.listen)/RTIMER_ARCH_SECOND)/seconds;
+  p1=h/100;p2=h-p1*100;h=s/3600;s=s-h*3600;m=s/60;s=s-m*60;
+  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor32, h,m,s,p1,p2);
+  if (*(char *)(uip_appdata + numprinted-4)==0) {numprinted-=4;}
+  else if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+  else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
+  else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
+}
+#endif
+
 #if RIMESTATS_CONF_ON
 #include "net/rime/rimestats.h"
-  static const char httpd_cgi_sensor12[] HTTPD_STRING_ATTR = "<em>Packets:</em> Tx=%5d Rx=%5d TxL=%5d RxL=%5d<br>";
-  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor12,
+  static const char httpd_cgi_sensor21[] HTTPD_STRING_ATTR = "<em>Packets   (RIMESTATS):</em> Tx=%5lu  Rx=%5lu   TxL=%4lu  RxL=%4lu\n";
+  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor21,
 		rimestats.tx,rimestats.rx,rimestats.lltx-rimestats.tx,rimestats.llrx-rimestats.rx);
 #endif
+  static const char httpd_cgi_sensor99[] HTTPD_STRING_ATTR = "</pre>";
+  numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor99);
 
   return numprinted;
 
@@ -623,7 +665,7 @@ generate_radio_stats(void *arg)
   uint8_t p1,p2;
   unsigned long seconds=clock_seconds();
   static const char httpd_cgi_sensor10[] HTTPD_STRING_ATTR = "<em>Radio on time  :</em> %02d:%02d:%02d (%d.%02d%%)<br>";
-  static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "<em>Packets:</em> Tx=%5d Rx=%5d TxL=%5d RxL=%5d RSSI=%2ddBm\n";
+  static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "<em>Packets:</em> Tx=%5d Rx=%5d  TxL=%5d RxL=%5d RSSI=%2ddBm\n";
 
   s=(10000UL*savedradioontime)/seconds;
   p1=s/100;

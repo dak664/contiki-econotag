@@ -65,7 +65,7 @@ extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 
 #define CONTIKIMAC_CONF_WITH_CONTIKIMAC_HEADER 0
 #define WITH_PHASE_OPTIMIZATION     0
-#define WITH_FAST_SLEEP              0
+//#define WITH_FAST_SLEEP              0
 
 #ifndef WITH_PHASE_OPTIMIZATION
 #define WITH_PHASE_OPTIMIZATION      1
@@ -177,7 +177,9 @@ static int is_receiver_awake = 0;
    allows. Packets have to be a certain size to be able to be detected
    by two consecutive CCA checks, and here is where we define this
    shortest size. */
-#define SHORTEST_PACKET_SIZE               43
+#define SHORTEST_PACKET_SIZE               43-18  //multicast RPL DIS length
+
+
 
 
 #define ACK_LEN 3
@@ -203,7 +205,7 @@ static volatile unsigned char radio_is_on = 0;
 #endif
 
 #if CONTIKIMAC_CONF_COMPOWER
-static struct compower_activity current_packet;
+struct compower_activity current_packet;
 #endif /* CONTIKIMAC_CONF_COMPOWER */
 
 #if WITH_PHASE_OPTIMIZATION

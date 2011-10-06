@@ -34,6 +34,7 @@ AS       = $(CROSS)as
 AR       = $(CROSS)ar
 NM       = $(CROSS)nm
 OBJCOPY  = $(CROSS)objcopy
+ELF_SIZE = $(CROSS)size
 STRIP    = $(CROSS)strip
 
 PROJECT_OBJECTFILES += ${addprefix $(OBJECTDIR)/,$(CONTIKI_TARGET_MAIN:.c=.o)}
@@ -106,6 +107,7 @@ CUSTOM_RULE_C_TO_CO=yes
 
 %_$(TARGET).bin: %.elf
 	$(OBJCOPY) -O binary $< $@
+	$(ELF_SIZE) $<
 
 symbols.c:
 	cp ${CONTIKI}/tools/empty-symbols.c symbols.c

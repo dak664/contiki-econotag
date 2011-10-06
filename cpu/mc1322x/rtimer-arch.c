@@ -135,9 +135,12 @@ rtimer_arch_schedule(rtimer_clock_t t)
 			t = 1;				//assume rtimer wraparound from interrupt delay
 		}
 	} else {					//t apparently in the past
+//	uint32_t savet=t;
 		t += 0xffffffff - now;	//compute delta t assuming rtimer wraparound
 		if (t > 0x7fffffff) {	//a really long time was requested
+
 			DEBUGFLOW('#');DEBUGFLOW('#');DEBUGFLOW('#');
+//					debugflowsize+=sprintf(&debugflow[debugflowsize],"t %u now %u",savet,now);
 			t = 1;				//assume interrupt delay
 		}
 	}

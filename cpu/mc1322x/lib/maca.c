@@ -708,7 +708,7 @@ void maca_isr(void) {
 		RIMESTATS_ADD(badsynch);
 		*MACA_CLRIRQ = (1 << maca_irq_flt);
 		maca_receiving = 0;
-		goto resumesync; //This seems to fix the border router hang...
+	//	goto resumesync; //This seems to fix the border router hang...
 	}
 	if (checksum_failed_irq()) {  //probably dont need this interrupt
 		PRINTF("maca checksum failed\n\r");

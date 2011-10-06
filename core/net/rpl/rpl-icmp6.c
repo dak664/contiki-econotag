@@ -136,7 +136,8 @@ dis_input(void)
   if(dag != NULL) {
     if(uip_is_addr_mcast(&UIP_IP_BUF->destipaddr)) {
       PRINTF("RPL: Multicast DIS => reset DIO timer\n");
-      rpl_reset_dio_timer(dag, 0);
+  //    rpl_reset_dio_timer(dag, 0);
+	        rpl_reset_dio_timer(dag, 1);  //force
     } else {
       PRINTF("RPL: Unicast DIS, reply to sender\n");
       dio_output(dag, &UIP_IP_BUF->srcipaddr);
