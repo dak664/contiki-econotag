@@ -673,7 +673,7 @@ bit 18-19  11          ????????
 		debugflowsize=0;
 	  }
 #endif
-#if PERIODICPRINTS
+#if PERIODICPRINTS && 0
 #if TESTRTIMER
 /* Timeout can be increased up to 8 seconds maximum.
  * A one second cycle is convenient for triggering the various debug printouts.
@@ -684,7 +684,9 @@ bit 18-19  11          ????????
       rtimerflag=0;
 #else
   if (clocktime!=clock_seconds()) {
- // 	printf("%x %x %x %x",*MACA_MACPANID,*MACA_MAC16ADDR,*MACA_MAC64HI,*MACA_MAC64LO);
+  #include "sys/compower.h"
+ //extern uint32_t testlong;
+ //printf("idle %u %u %u\n",testlong,compower_idle_activity.transmit,compower_idle_activity.listen);
      clocktime=clock_seconds();
 #endif
 
@@ -712,7 +714,7 @@ if ((clocktime%PINGS)==1) {
 }
 #endif
 
-#if ROUTES && UIP_CONF_IPV6
+#if ROUTES && UIP_CONF_IPV6  && 0
 if ((clocktime%ROUTES)==2) {
       
 extern uip_ds6_nbr_t uip_ds6_nbr_cache[];

@@ -133,7 +133,8 @@ volatile uint8_t fcs_mode = USE_FCS;
 volatile uint8_t prm_mode = PROMISC;
 volatile uint8_t maca_pwr = 0;
 volatile uint8_t maca_busy = 0;
-volatile uint8_t do_cca = 0;
+volatile uint8_t delay_rxpost;
+volatile int8_t do_cca;
 volatile uint8_t maca_receiving;
 
 void maca_init(void) {
@@ -319,7 +320,7 @@ volatile packet_t* get_free_packet(void) {
 /* Force an interrupt, with tx_head nonzero or do_cca=1 to request other than Rx */
 
 void post_receive(void) {
-//	GPIO->DATA_SET.GPIO_45 = 1;  //green led on every radio duty cycle
+	GPIO->DATA_SET.GPIO_45 = 1;  //green led on every radio duty cycle
 	last_post = RX_POST;
 	last_post_time = *MACA_CLK;
 	/* this sets the rxlen field */
@@ -351,7 +352,25 @@ void post_receive(void) {
 	ENERGEST_OFF(ENERGEST_TYPE_LISTEN);  //aborted rx will not do the off
 	ENERGEST_ON(ENERGEST_TYPE_LISTEN);   //and this would overwrite the previous start time
 
-	*MACA_CONTROL = ( (1 << maca_ctrl_asap) | 
+/* If last_post was CCA with a clear channel, delay the rx startup to give the RDC time to 
+   turn the radio off. This saves some energy.
+   TODO: ENERGEST will overestimate by the startup delay time.
+ */
+	if(delay_rxpost&&0) {
+		delay_rxpost=0;
+//		DEBUGFLOW('D');
+		*MACA_TMREN |= ( 1 << maca_tmren_strt ) ;
+		/* Delay >80 usec. Assuming 250KHz clock, ==20 */
+//		*MACA_STARTCLK = *MACA_CLK + 24; //this hangs!!!!
+		*MACA_STARTCLK = *MACA_CLK + 30;
+		*MACA_CONTROL = (  
+			  ( 4 << PRECOUNT) |
+			  ( fcs_mode << NOFC ) |
+			  ( prm_mode << PRM) |
+			  (maca_ctrl_seq_rx));
+	} else {
+//			DEBUGFLOW('I');
+		*MACA_CONTROL = ( (1 << maca_ctrl_asap) | 
 			  ( 4 << PRECOUNT) |
 			  ( fcs_mode << NOFC ) |
 			  ( prm_mode << PRM) |
@@ -360,6 +379,7 @@ void post_receive(void) {
 			  (1 << maca_ctrl_auto) |
 #endif
 			  (maca_ctrl_seq_rx));
+	}
 	/* status bit 10 is set immediately */
         /* then 11, 10, and 9 get set */ 
         /* they are cleared once we get back to maca_isr */ 
@@ -411,7 +431,8 @@ void post_cca(void)
 	ENERGEST_OFF(ENERGEST_TYPE_LED_YELLOW);
 	ENERGEST_ON(ENERGEST_TYPE_LED_YELLOW);
 
-	*MACA_CONTROL = ( ( 10 << PRECOUNT) |  //why 10?
+//	*MACA_CONTROL = ( ( 10 << PRECOUNT) |  //why 10?
+	*MACA_CONTROL = ( (4 << PRECOUNT) |
 			  (1 << maca_ctrl_asap) |
 			  (1 << maca_ctrl_mode) |
 			  (maca_ctrl_seq_cca));	
@@ -512,9 +533,10 @@ void tx_packet(volatile packet_t *p) {
 
 uint8_t cca(void) {
 	if (maca_pwr == 0) {
+	DEBUGFLOW('Z');
 	 return 1; //could turn radio on and continue
 	}
-
+			enable_irq(MACA); //TODO: does somebody clear this?
 	/* If receiving a packet return busy */
 	if (maca_receiving) return 0;
 
@@ -530,12 +552,14 @@ uint8_t cca(void) {
 	/* Potential hang here but it has not happened yet */
 	/* To avoid that this could be wrapped with a timeout that bails to resumemacasync */
 	do_cca = 1;
+
 	if (last_post == TX_POST) {			//wait for packet tx to complete
 		while (last_post == TX_POST) {};
 	} else if (last_post == RXB_POST) {	//wait for packet rx to complete
 		while (last_post == RXB_POST) {};
 	} else {
-		enable_irq(MACA); //TODO: does somebody clears this?
+//	DEBUGFLOW('>');
+//		enable_irq(MACA); //TODO: does somebody clear this?
        *INTFRC = (1<<INT_NUM_MACA);
 	}
 
@@ -705,9 +729,15 @@ void maca_isr(void) {
 	if (filter_failed_irq()) {
 		DEBUGFLOW('$');		DEBUGFLOW('$');		DEBUGFLOW('$');
 		PRINTF("maca filter failed\n\r");
-		RIMESTATS_ADD(badsynch);
+	//	RIMESTATS_ADD(badsynch);
 		*MACA_CLRIRQ = (1 << maca_irq_flt);
 		maca_receiving = 0;
+		if (*MACA_IRQ == 0) {	//no interrupts pending
+			GPIO->DATA_RESET.GPIO_45 = 1;  //greeen off
+			ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
+//			DEBUGFLOW('N');
+			goto resumesync;
+		}
 	//	goto resumesync; //This seems to fix the border router hang...
 	}
 	if (checksum_failed_irq()) {  //probably dont need this interrupt
@@ -726,7 +756,10 @@ actioncomplete:
 		
 		/* Previous CCA no longer valid */
 		maca_busy = 0;
-
+		
+		/* Don't delay next rx posting unless set by cca below */
+		delay_rxpost = 0;
+		
 		if  ((unsigned int)((*MACA_STATUS)&0xf) !=0) {
 //A=success  C=Channel busy (normal on cca) E=aborted F=noack (normal on tx) M=pll unlock O=not completed
 			if (!(((last_post==TX_POST) && (((unsigned int)*MACA_STATUS&0xf)==5)) || ((last_post==CCA_POST)&&(((unsigned int)(*MACA_STATUS)&0xf) ==2)))) {
@@ -803,15 +836,26 @@ actioncomplete:
 /*
  *			The cca routine is probably waiting for maca_busy !=0. We set to 1 for busy channel,
  *			2 for clear channel.
- *			Status busy bit and status code == 2 (busy) seem to be equivalent at this point.
+ *
+ *			Status busy bit and status code == 2 (busy) had seemed to be equivalent at this point.
+ *          However Status busy bit is also set if the previous power off cancelled a start-clock-delayed post receive,
+ *          and the next RDC power on started a CCA. The status code works in that case.
+ *          However the status busy bit is needed in the non-delayed case.
+ *
  *			register 08x0009490 seems to contain the measured rssi used for the cca determination.
  *			if((*((volatile uint32_t *)(0x80009490))&0xff) >70) { //my baseline background 64 +/- 5 
  *			if (*MACA_STATUS==2) { 
+ *		    if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
  */
-			if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
+//  			if (*MACA_STATUS==2) { 
+ 		    if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
 				maca_busy=1;
 			} else {
 				maca_busy = 2;
+				/* On a clear channel delay the post_receive so contikimac can turn the radio off first.
+				   This saves some energy
+				*/
+				delay_rxpost = 1;
 			}
 		
 		} else if (last_post==NO_POST) {//should not be getting action complete during idle
@@ -860,6 +904,7 @@ resumesync:
 			do_cca = 0;
 			post_cca();
 		} else if(tx_head != 0) {
+//		DEBUGFLOW('p');
 			post_tx();
 /* Multiple action start interrupts will occur if no delay here.
  * Even if action start interrupts are disabled, if the delay is not done
@@ -883,6 +928,7 @@ resumesync:
  * No delay: slowirq 497 rtimerint 477 cca 32 fastirq 17 tx 26 listen 973
  * Delay   : slowirq 204 rtimerint 187 cca 32 fastirq 37 tx 19 listen 49
  */
+ /*TODO: See if this is necessary when the post_listen is delayed by the start clock */
 			{volatile int i;for (i=0;i<150;i++) {} }
 		}
 	}
@@ -1039,7 +1085,7 @@ const uint32_t data_reg_rep[MAX_DATA] = { 0x00180012,0x00000605,0x00000504,0x000
 void maca_off(void) {
 
 	/* Do nothing if already off */
-	if (maca_pwr == 0) return;
+	if (maca_pwr == 0) {DEBUGFLOW('v');return;}
 
 	/* Stay on if busy */
 	/* Could wait here till complete and then go off */
@@ -1047,6 +1093,8 @@ void maca_off(void) {
 		DEBUGFLOW('!');
 		return;
 	}
+//DEBUGFLOW('-');
+	GPIO->DATA_RESET.GPIO_45 = 1;  //green led off
 	disable_irq(MACA);
 	maca_pwr = 0;
 
@@ -1067,11 +1115,14 @@ void maca_off(void) {
 }
 
 void maca_on(void) {
-
 	/* Do nothing if already on */
-	if (maca_pwr != 0) return;
+	if (maca_pwr != 0) {
+//		DEBUGFLOW('X');
+		return;
+	}
+//	DEBUGFLOW('+');
 	maca_pwr = 1;
-
+	
 	/* Turn the radio regulators back on */
 	reg(0x80003048) =  0x00000f78; 
 	
@@ -1091,7 +1142,8 @@ void maca_on(void) {
 
 	/* Post CCA in anticipation of the next maca call */
 	/* When called by contiki_maca_transmit do_cca == -1 to skip this */
-	if(do_cca<0) do_cca=0; else {
+	if(do_cca<0) {DEBUGFLOW('T');do_cca=0;} else {
+//	DEBUGFLOW('F');
 		do_cca=1;
 		*INTFRC = (1 << INT_NUM_MACA);
 	}

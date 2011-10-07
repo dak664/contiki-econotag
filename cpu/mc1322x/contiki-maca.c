@@ -223,7 +223,7 @@ int contiki_maca_transmit(unsigned short transmit_len) {
 	/* Turn radio on if necessary, cancelling initial cca */
 	if(maca_pwr == 0) 
 	{
-		do_cca = -1;
+	//	do_cca = -1;
 		maca_on();
 	}
 

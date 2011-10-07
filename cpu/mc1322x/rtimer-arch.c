@@ -93,12 +93,12 @@ void rtc_isr(void) {
 	ENERGEST_ON(ENERGEST_TYPE_LED_GREEN);
         PRINTF("rtc_wu_irq\n\r");
         PRINTF("now is %u\n", rtimer_arch_now());
-    //    disable_irq(MACA);
+  //     disable_irq(MACA);  //gives pll unlock error in maca interrupt
         disable_rtc_wu();
         disable_rtc_wu_irq();
   //      *CRM_RTC_TIMEOUT = rtimer_arch_now() + 1000;
         clear_rtc_wu_evt();
-   //     while (rtc_wu_evt()) {};
+        while (rtc_wu_evt()) {};
   //      enable_irq(MACA);
         rtimer_run_next();
 	ENERGEST_OFF(ENERGEST_TYPE_LED_GREEN);
@@ -136,7 +136,8 @@ rtimer_arch_schedule(rtimer_clock_t t)
 		}
 	} else {					//t apparently in the past
 //	uint32_t savet=t;
-		t += 0xffffffff - now;	//compute delta t assuming rtimer wraparound
+		t = now -t;
+//		t += 0xffffffff - now;	//compute delta t assuming rtimer wraparound
 		if (t > 0x7fffffff) {	//a really long time was requested
 
 			DEBUGFLOW('#');DEBUGFLOW('#');DEBUGFLOW('#');

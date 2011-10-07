@@ -294,11 +294,17 @@ schedule_powercycle_fixed(struct rtimer *t, rtimer_clock_t fixed_time)
   int r;
 
   if(contikimac_is_on) {
-
+#if 1 
     if(RTIMER_CLOCK_LT(fixed_time, RTIMER_NOW() + 1)) {
+		DEBUGFLOW('Q');
       fixed_time = RTIMER_NOW() + 1;
     }
-
+#else
+	if(RTIMER_CLOCK_LT(fixed_time, RTIMER_NOW() + 4)) {
+	DEBUGFLOW('Q');
+      fixed_time = RTIMER_NOW() + 4;
+    }
+#endif
     r = rtimer_set(t, fixed_time, 1,
                    (void (*)(struct rtimer *, void *))powercycle, NULL);
     if(r != RTIMER_OK) {
@@ -345,10 +351,13 @@ powercycle(struct rtimer *t, void *ptr)
     static uint8_t count;
 
     cycle_start += CYCLE_TIME;
+ // cycle_start = RTIMER_NOW();
 
     packet_seen = 0;
 
     for(count = 0; count < CCA_COUNT_MAX; ++count) {
+		if (we_are_sending) DEBUGFLOW('W');
+				if (we_are_receiving_burst) DEBUGFLOW('B');
       t0 = RTIMER_NOW();
       if(we_are_sending == 0 && we_are_receiving_burst == 0) {
         powercycle_turn_radio_on();
@@ -427,9 +436,12 @@ powercycle(struct rtimer *t, void *ptr)
     }
 
     if(RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 4)) {
+	DEBUGFLOW('f');
       schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
       PT_YIELD(&pt);
-    }
+    } else {
+		DEBUGFLOW('E');
+	}
   }
 
   PT_END(&pt);
