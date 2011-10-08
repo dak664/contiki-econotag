@@ -320,7 +320,7 @@ volatile packet_t* get_free_packet(void) {
 /* Force an interrupt, with tx_head nonzero or do_cca=1 to request other than Rx */
 
 void post_receive(void) {
-	GPIO->DATA_SET.GPIO_45 = 1;  //green led on every radio duty cycle
+//	GPIO->DATA_SET.GPIO_45 = 1;  //green led on every radio duty cycle
 	last_post = RX_POST;
 	last_post_time = *MACA_CLK;
 	/* this sets the rxlen field */
@@ -337,7 +337,7 @@ void post_receive(void) {
 			*MACA_SFTCLK = *MACA_CLK + RECV_SOFTIMEOUT; /* soft timeout */ 
 //			*MACA_TMREN = (1 << maca_tmren_sft);
 			/* no free buffers, so don't start a reception */
-			DEBUGFLOW('N');
+			DEBUGFLOW('N');DEBUGFLOW('F');
 			return;
 		}
 	}
@@ -345,7 +345,7 @@ void post_receive(void) {
 	BOUND_CHECK(dma_tx);
 	*MACA_DMARX = (uint32_t)&(dma_rx->data[0]);
 	/* with timeout */		
-	*MACA_SFTCLK = *MACA_CLK + RECV_SOFTIMEOUT; /* soft timeout */ 
+//	*MACA_SFTCLK = *MACA_CLK + RECV_SOFTIMEOUT; /* soft timeout */ 
 //	*MACA_TMREN = (1 << maca_tmren_sft);
 
 	/* start the receive sequence */
@@ -354,22 +354,28 @@ void post_receive(void) {
 
 /* If last_post was CCA with a clear channel, delay the rx startup to give the RDC time to 
    turn the radio off. This saves some energy.
+   Theoretically the delay should be just longer than the RDC time from CCA return to radio_off,
+   which is around 80 usec or 20 counts of a 250KHz clock.
+   I don't understant why longer delays are needed.
+   If the delay is insufficient the next CCA will show channel busy.
    TODO: ENERGEST will overestimate by the startup delay time.
+   The delayed action start interrupt could be used to start ENERGEST
  */
-	if(delay_rxpost&&0) {
+	if(delay_rxpost) {
 		delay_rxpost=0;
-//		DEBUGFLOW('D');
-		*MACA_TMREN |= ( 1 << maca_tmren_strt ) ;
-		/* Delay >80 usec. Assuming 250KHz clock, ==20 */
+		*MACA_TMREN = ( 1 << maca_tmren_strt ) ;
 //		*MACA_STARTCLK = *MACA_CLK + 24; //this hangs!!!!
-		*MACA_STARTCLK = *MACA_CLK + 30;
+//		*MACA_STARTCLK = *MACA_CLK + 100;  //no
+//		*MACA_STARTCLK = *MACA_CLK + 190;  //no
+//		*MACA_STARTCLK = *MACA_CLK + 200;  //intermittant
+		*MACA_STARTCLK = *MACA_CLK + 250;  //yes
 		*MACA_CONTROL = (  
 			  ( 4 << PRECOUNT) |
 			  ( fcs_mode << NOFC ) |
 			  ( prm_mode << PRM) |
 			  (maca_ctrl_seq_rx));
 	} else {
-//			DEBUGFLOW('I');
+		GPIO->DATA_SET.GPIO_45 = 1;  //green led on during listening
 		*MACA_CONTROL = ( (1 << maca_ctrl_asap) | 
 			  ( 4 << PRECOUNT) |
 			  ( fcs_mode << NOFC ) |
@@ -419,11 +425,11 @@ void post_cca(void)
 	last_post_time = *MACA_CLK;
 	/* disable soft timeout clock */
 	/* disable start clock */
-	*MACA_TMRDIS = (1 << maca_tmren_sft) | ( 1<< maca_tmren_cpl) | ( 1 << maca_tmren_strt ) ;
+//	*MACA_TMRDIS = (1 << maca_tmren_sft) | ( 1<< maca_tmren_cpl) | ( 1 << maca_tmren_strt ) ;
 	
         /* set complete clock to long value */
 	/* acts like a watchdog in case the MACA locks up */
-	*MACA_CPLCLK = *MACA_CLK + (8*CLK_PER_BYTE);
+//	*MACA_CPLCLK = *MACA_CLK + (8*CLK_PER_BYTE);
 	/* enable complete clock */
 //	*MACA_TMREN = (1 << maca_tmren_cpl);
 
@@ -431,7 +437,6 @@ void post_cca(void)
 	ENERGEST_OFF(ENERGEST_TYPE_LED_YELLOW);
 	ENERGEST_ON(ENERGEST_TYPE_LED_YELLOW);
 
-//	*MACA_CONTROL = ( ( 10 << PRECOUNT) |  //why 10?
 	*MACA_CONTROL = ( (4 << PRECOUNT) |
 			  (1 << maca_ctrl_asap) |
 			  (1 << maca_ctrl_mode) |
@@ -468,11 +473,11 @@ void post_tx(void) {
 	*MACA_DMARX = (uint32_t)&(dma_rx->data[0]);
 	/* disable soft timeout clock */
 	/* disable start clock */
-	*MACA_TMRDIS = (1 << maca_tmren_sft) | ( 1<< maca_tmren_cpl) | ( 1 << maca_tmren_strt ) ;
+//	*MACA_TMRDIS = (1 << maca_tmren_sft) | ( 1<< maca_tmren_cpl) | ( 1 << maca_tmren_strt ) ;
 	
         /* set complete clock to long value */
 	/* acts like a watchdog in case the MACA locks up */
-	*MACA_CPLCLK = *MACA_CLK + CPL_TIMEOUT;
+//	*MACA_CPLCLK = *MACA_CLK + CPL_TIMEOUT;
 	/* enable complete clock */
 //	*MACA_TMREN = (1 << maca_tmren_cpl);
 	
@@ -669,11 +674,12 @@ void insert_at_rx_head(volatile packet_t *p) {
 
 void maca_isr(void) {
 
-	maca_entry++;
+//	maca_entry++;
 
 /* If no interrupt bit set, interrupt was forced for a new sequence posting and we should be in idle or rx listening mode. */
 /* If last_post was TX, CCA, or RXB then the posting routine should have waited for action complete */
 	if (*MACA_IRQ==0) goto resumesync;
+//		if (*INTFRC) {DEBUGFLOW('F');goto resumesync;}
 
 /* These interrupts currently disabled in the IRQ mask */
 #if 0
@@ -847,7 +853,7 @@ actioncomplete:
  *			if (*MACA_STATUS==2) { 
  *		    if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
  */
-//  			if (*MACA_STATUS==2) { 
+//			if (*MACA_STATUS==2) { 
  		    if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
 				maca_busy=1;
 			} else {
@@ -928,7 +934,7 @@ resumesync:
  * No delay: slowirq 497 rtimerint 477 cca 32 fastirq 17 tx 26 listen 973
  * Delay   : slowirq 204 rtimerint 187 cca 32 fastirq 37 tx 19 listen 49
  */
- /*TODO: See if this is necessary when the post_listen is delayed by the start clock */
+ /*TODO: See if this is necessary when the post_receive is delayed by the start clock */
 			{volatile int i;for (i=0;i<150;i++) {} }
 		}
 	}
@@ -1093,10 +1099,16 @@ void maca_off(void) {
 		DEBUGFLOW('!');
 		return;
 	}
-//DEBUGFLOW('-');
+
 	GPIO->DATA_RESET.GPIO_45 = 1;  //green led off
 	disable_irq(MACA);
 	maca_pwr = 0;
+	
+	/* Disable clocks, cancel possible delayed RX post */
+//		MACA_WRITE(maca_control, 1 | (1 << maca_ctrl_asap) ); //abort
+	/* Note mcu will hang if radio is off when a startclk post comes through */
+	*MACA_TMRDIS = (1 << maca_tmren_sft) | ( 1<< maca_tmren_cpl) | ( 1 << maca_tmren_strt);
+
 
 #if 0	
 	/* Save registers that will be lost on powerdown */
@@ -1117,10 +1129,9 @@ void maca_off(void) {
 void maca_on(void) {
 	/* Do nothing if already on */
 	if (maca_pwr != 0) {
-//		DEBUGFLOW('X');
 		return;
 	}
-//	DEBUGFLOW('+');
+//	*MACA_CONTROL = 1 | (1 << maca_ctrl_asap); //abort
 	maca_pwr = 1;
 	
 	/* Turn the radio regulators back on */
@@ -1135,6 +1146,14 @@ void maca_on(void) {
 
 	/* Wait for VREG_1P5V_RDY indication */
 	while (!((*(volatile uint32_t *)0x80003018) & (1<< 19))) {}
+	
+	/* If last turnoff had a pending RX post we will get an action complete/PLL unlock interrupt.
+	 * If an abort is now issued we will get an action complete/abort interrupt.
+	 * This action complete is delayed by some unknown amount, just clearing MACA_IRQ below will not stop it.
+	 * However a NOP does the job!
+	 */
+	 
+	*MACA_CONTROL = maca_ctrl_seq_nop | (1 << maca_ctrl_asap);
 
 	last_post = NO_POST;
 	*MACA_CLRIRQ = 0xffff;
@@ -1143,7 +1162,6 @@ void maca_on(void) {
 	/* Post CCA in anticipation of the next maca call */
 	/* When called by contiki_maca_transmit do_cca == -1 to skip this */
 	if(do_cca<0) {DEBUGFLOW('T');do_cca=0;} else {
-//	DEBUGFLOW('F');
 		do_cca=1;
 		*INTFRC = (1 << INT_NUM_MACA);
 	}
