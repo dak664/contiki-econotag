@@ -112,7 +112,7 @@ static int is_receiver_awake = 0;
    consists of two or more CCA checks. CCA_COUNT_MAX is the number of
    CCAs to be done for each periodic channel check. The default is
    two.*/
-#define CCA_COUNT_MAX                      5
+#define CCA_COUNT_MAX                      2
 
 /* Before starting a transmission, Contikimac checks the availability
    of the channel with CCA_COUNT_MAX_TX consecutive CCAs */
@@ -374,29 +374,29 @@ extern volatile uint8_t radio_channel_busy;
  */
 
  /* If the last CCA resulted in busy. the radio will be on. Cancel the busy to force the next CCA, and exit */
-
+#if 0
 		if (radio_channel_busy) {
-//			DEBUGFLOW('1');
+		//	DEBUGFLOW('1');
 			radio_channel_busy = 0;
 			packet_seen = 1;
 			break;
 		}
+#endif	
   /* Else issue a CCA for the next time through */
-		if (count < CCA_COUNT_MAX) {
+
 			if (NETSTACK_RADIO.channel_clear() == 0) {
-				DEBUGFLOW('2');
+		//		DEBUGFLOW('2');
 				packet_seen = 1;
 				break;
 			}
-		} else break;
 	  }
 
 /* Exit the rtimer interrupt until the CCA is ready and the next is due */
-	//  if (count < CCA_COUNT_MAX) {
+	 if (count < CCA_COUNT_MAX) {
 	//    schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_CHECK_TIME + CCA_SLEEP_TIME);
 			    schedule_powercycle_fixed(t, RTIMER_NOW() + RTIMER_ARCH_SECOND/1000);
         PT_YIELD(&pt);
-	//  }
+	  }
     }
 
 #else
