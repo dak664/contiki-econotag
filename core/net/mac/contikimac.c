@@ -55,7 +55,7 @@
 
 #include <string.h>
 
-//#define DEBUGFLOWSIZE 128
+#define DEBUGFLOWSIZE 128
 #if DEBUGFLOWSIZE
 extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 #define DEBUGFLOW(c) if (debugflowsize<(DEBUGFLOWSIZE-1)) debugflow[debugflowsize++]=c
@@ -112,7 +112,7 @@ static int is_receiver_awake = 0;
    consists of two or more CCA checks. CCA_COUNT_MAX is the number of
    CCAs to be done for each periodic channel check. The default is
    two.*/
-#define CCA_COUNT_MAX                      2
+#define CCA_COUNT_MAX                      5
 
 /* Before starting a transmission, Contikimac checks the availability
    of the channel with CCA_COUNT_MAX_TX consecutive CCAs */
@@ -120,11 +120,11 @@ static int is_receiver_awake = 0;
 
 /* CCA_CHECK_TIME is the time it takes to perform a CCA check. */
 //#define CCA_CHECK_TIME                     RTIMER_ARCH_SECOND / 8192
-#define CCA_CHECK_TIME                     RTIMER_ARCH_SECOND / 7407  //econotag
+#define CCA_CHECK_TIME                     RTIMER_ARCH_SECOND / 7407  //econotag 135 usec
 
 /* CCA_SLEEP_TIME is the time between two successive CCA checks. */
 //define CCA_SLEEP_TIME                     RTIMER_ARCH_SECOND / 2000
-#define CCA_SLEEP_TIME                     RTIMER_ARCH_SECOND / 6849  //econotag
+#define CCA_SLEEP_TIME                     RTIMER_ARCH_SECOND / 6849  //econotag 146 usec
 
 /* CHECK_TIME is the total time it takes to perform CCA_COUNT_MAX
    CCAs. */
@@ -251,7 +251,8 @@ static int broadcast_rate_counter;
 static void
 on(void)
 {
-  if(contikimac_is_on && radio_is_on == 0) {
+ // if(contikimac_is_on && radio_is_on == 0) {
+    if(contikimac_is_on) {
     radio_is_on = 1;
     NETSTACK_RADIO.on();
   }
@@ -260,7 +261,8 @@ on(void)
 static void
 off(void)
 {
-  if(contikimac_is_on && radio_is_on != 0 &&
+ // if(contikimac_is_on && radio_is_on != 0 &&
+    if(contikimac_is_on  &&
      contikimac_keep_radio_on == 0) {
     radio_is_on = 0;
     NETSTACK_RADIO.off();
@@ -296,7 +298,6 @@ schedule_powercycle_fixed(struct rtimer *t, rtimer_clock_t fixed_time)
   if(contikimac_is_on) {
 #if 1 
     if(RTIMER_CLOCK_LT(fixed_time, RTIMER_NOW() + 1)) {
-		DEBUGFLOW('Q');
       fixed_time = RTIMER_NOW() + 1;
     }
 #else
@@ -319,8 +320,9 @@ powercycle_turn_radio_off(void)
 #if CONTIKIMAC_CONF_COMPOWER
   uint8_t was_on = radio_is_on;
 #endif /* CONTIKIMAC_CONF_COMPOWER */
-  
+
   if(we_are_sending == 0 && we_are_receiving_burst == 0) {
+
     off();
 #if CONTIKIMAC_CONF_COMPOWER
     if(was_on && !radio_is_on) {
@@ -344,20 +346,61 @@ powercycle(struct rtimer *t, void *ptr)
   PT_BEGIN(&pt);
 
   cycle_start = RTIMER_NOW();
-  
+
   while(1) {
     static uint8_t packet_seen;
     static rtimer_clock_t t0;
     static uint8_t count;
 
     cycle_start += CYCLE_TIME;
- // cycle_start = RTIMER_NOW();
 
     packet_seen = 0;
 
+#if RADIO_CONF_MANAGECCAPOWER || 1
+extern volatile uint8_t radio_channel_busy;
+    radio_channel_busy = 0;
+
     for(count = 0; count < CCA_COUNT_MAX; ++count) {
-		if (we_are_sending) DEBUGFLOW('W');
-				if (we_are_receiving_burst) DEBUGFLOW('B');
+      t0 = RTIMER_NOW();
+      if(we_are_sending == 0 && we_are_receiving_burst == 0) {
+
+/* For radios that can turn on, do the cca, and turn off if clear channel was detected.
+ * A clear channel result is returned immediately, once the radio powers up and does the cca the result
+ * is put into the global radio_channel_busy.
+ * Since the radio can remember that it powered up and stayed on because a busy channel was detected,
+ * no more CCAs will be done and busy returned until NETSTACK_RADIO.on() is called explicitly.
+ * It is not necessary to turn the radio off before the on call, if the radio is on NETSTACK_RADIO.on()
+ * will reset the no-CCA flag and return immediately.
+ */
+
+ /* If the last CCA resulted in busy. the radio will be on. Cancel the busy to force the next CCA, and exit */
+
+		if (radio_channel_busy) {
+//			DEBUGFLOW('1');
+			radio_channel_busy = 0;
+			packet_seen = 1;
+			break;
+		}
+  /* Else issue a CCA for the next time through */
+		if (count < CCA_COUNT_MAX) {
+			if (NETSTACK_RADIO.channel_clear() == 0) {
+				DEBUGFLOW('2');
+				packet_seen = 1;
+				break;
+			}
+		} else break;
+	  }
+
+/* Exit the rtimer interrupt until the CCA is ready and the next is due */
+	//  if (count < CCA_COUNT_MAX) {
+	//    schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_CHECK_TIME + CCA_SLEEP_TIME);
+			    schedule_powercycle_fixed(t, RTIMER_NOW() + RTIMER_ARCH_SECOND/1000);
+        PT_YIELD(&pt);
+	//  }
+    }
+
+#else
+    for(count = 0; count < CCA_COUNT_MAX; ++count) {
       t0 = RTIMER_NOW();
       if(we_are_sending == 0 && we_are_receiving_burst == 0) {
         powercycle_turn_radio_on();
@@ -376,8 +419,10 @@ powercycle(struct rtimer *t, void *ptr)
         powercycle_turn_radio_off();
       }
       schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_SLEEP_TIME);
-      PT_YIELD(&pt);
+	  PT_YIELD(&pt);
     }
+
+#endif
 
     if(packet_seen) {
       static rtimer_clock_t start;
@@ -436,7 +481,6 @@ powercycle(struct rtimer *t, void *ptr)
     }
 
     if(RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 4)) {
-	DEBUGFLOW('f');
       schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
       PT_YIELD(&pt);
     } else {
@@ -690,8 +734,8 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
       while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + INTER_PACKET_INTERVAL)) { }
 
       if(!is_broadcast && (NETSTACK_RADIO.receiving_packet() ||
-                           NETSTACK_RADIO.pending_packet() ||
-                           NETSTACK_RADIO.channel_clear() == 0)) {  //clear not necessary on econotag
+                           NETSTACK_RADIO.pending_packet())) {
+//                           NETSTACK_RADIO.channel_clear() == 0)) {  //clear not necessary on econotag
         uint8_t ackbuf[ACK_LEN];
         wt = RTIMER_NOW();
         while(RTIMER_CLOCK_LT(RTIMER_NOW(), wt + AFTER_ACK_DETECTECT_WAIT_TIME)) { }

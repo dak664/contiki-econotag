@@ -82,7 +82,7 @@ uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 //#define PINGS 64
 #define ROUTES 1200
 #define STAMPS 60
-#define STACKMONITOR 1200
+#define STACKMONITOR 300
 //#define HEAPMONITOR 60
 uint32_t clocktime;
 #define TESTRTIMER 0
@@ -410,7 +410,7 @@ uint32_t p=(uint32_t)&__heap_end__-4;
 
 
 	GPIO->PAD_DIR.GPIO_45 = 1;  //enable green LED output pin
-//	GPIO->FUNC_SEL.GPIO_45 = 0;  //manual (mac turns on when receiving packet) (Default)
+	GPIO->FUNC_SEL.GPIO_45 = 0;  //manual (mac turns on when receiving packet) (Default)
 //	GPIO->FUNC_SEL.GPIO_45 = 1;  //green driven by radio rx state (annoying with rdc)
 
 	/* debug io */
@@ -673,7 +673,7 @@ bit 18-19  11          ????????
 		debugflowsize=0;
 	  }
 #endif
-#if PERIODICPRINTS && 0
+#if PERIODICPRINTS
 #if TESTRTIMER
 /* Timeout can be increased up to 8 seconds maximum.
  * A one second cycle is convenient for triggering the various debug printouts.

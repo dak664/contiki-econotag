@@ -136,6 +136,8 @@ volatile uint8_t maca_busy = 0;
 volatile uint8_t delay_rxpost;
 volatile int8_t do_cca;
 volatile uint8_t maca_receiving;
+volatile static uint8_t automatic_cca_turnon;
+volatile uint8_t radio_channel_busy;
 
 void maca_init(void) {
 	reset_maca();
@@ -537,18 +539,31 @@ void tx_packet(volatile packet_t *p) {
 }
 
 uint8_t cca(void) {
+
 	if (maca_pwr == 0) {
-	DEBUGFLOW('Z');
-	 return 1; //could turn radio on and continue
+/* If called with radio off, turn on and do the cca. If channel clear, the action complete will turn it off again.
+ * If channel busy leave radio on and do no more CCAs until radio_on or radio_off is explicitly called.
+ */
+		maca_on();
+		automatic_cca_turnon=1;
+	} else if (automatic_cca_turnon) {
+//	DEBUGFLOW('B');
+//		return 0;
 	}
-			enable_irq(MACA); //TODO: does somebody clear this?
+//		automatic_cca_turnon=1;
+	enable_irq(MACA); //TODO: does somebody clear this?
+
 	/* If receiving a packet return busy */
 	if (maca_receiving) return 0;
 
+	/* If we turned ourself on just return clear channel */
+	if (automatic_cca_turnon) return 1;
+	
 	/* maca_busy is 0 if the cca needs to be done */
 	/* If nonzero the cca from startup is still valid */
 	if (maca_busy) goto bypass;
-	
+
+
 	/* If cca is currently being done just wait for it to finish */
 	if (last_post == CCA_POST) goto waitcca;
 
@@ -559,19 +574,22 @@ uint8_t cca(void) {
 	do_cca = 1;
 
 	if (last_post == TX_POST) {			//wait for packet tx to complete
+		DEBUGFLOW('G');
 		while (last_post == TX_POST) {};
 	} else if (last_post == RXB_POST) {	//wait for packet rx to complete
+		DEBUGFLOW('H');
 		while (last_post == RXB_POST) {};
 	} else {
-//	DEBUGFLOW('>');
-//		enable_irq(MACA); //TODO: does somebody clear this?
        *INTFRC = (1<<INT_NUM_MACA);
 	}
-
+	/* If we turned ourself on just return clear channel */
+	if (automatic_cca_turnon) return 1;
+	
 waitcca:
 	/* Wait for interrupt sequence to complete and set maca_busy, 1 for busy 2 for clear */
 	/* Again a potential hang that has not happened yet */
 	while (maca_busy==0) {};
+
 bypass:
 	if (maca_busy==1) {
 		maca_busy=0;
@@ -853,15 +871,22 @@ actioncomplete:
  *			if (*MACA_STATUS==2) { 
  *		    if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
  */
-//			if (*MACA_STATUS==2) { 
- 		    if(bit_is_set(*MACA_STATUS, maca_status_busy)) {
+			if (*MACA_STATUS==2) { //must use this for automatic
+	//						DEBUGFLOW('S');
+ 	//	    if(bit_is_set(*MACA_STATUS, maca_status_busy)) { //must use this for delayed post
+				radio_channel_busy = 1;
 				maca_busy=1;
 			} else {
+				radio_channel_busy = 0;
 				maca_busy = 2;
+				if (automatic_cca_turnon) {
+					maca_off();
+					return;
+				}
 				/* On a clear channel delay the post_receive so contikimac can turn the radio off first.
 				   This saves some energy
 				*/
-				delay_rxpost = 1;
+//				delay_rxpost = 1;
 			}
 		
 		} else if (last_post==NO_POST) {//should not be getting action complete during idle
@@ -1089,9 +1114,10 @@ const uint32_t addr_reg_rep[MAX_DATA] = { 0x80004118,0x80009204,0x80009208,0x800
 const uint32_t data_reg_rep[MAX_DATA] = { 0x00180012,0x00000605,0x00000504,0x00001111,0x0fc40000,0x20046000,0x4005580c,0x40075801,0x4005d801,0x5a45d800,0x4a45d800,0x40044000,0x00106000,0x00083806,0x00093807,0x0009b804,0x000db800,0x00093802,0x00000015,0x00000002,0x0000000f,0x0000aaa0,0x01002020,0x016800fe,0x8e578248,0x000000dd,0x00000946,0x0000035a,0x00100010,0x00000515,0x00097feb,0x00180358,0x00000455,0x00000001,0x00020003,0x00040014,0x00240034,0x00440144,0x02440344,0x04440544,0x0ee7fc00,0x00000082,0x0000002a };
 
 void maca_off(void) {
-
+//	automatic_cca_turnon = 0;
 	/* Do nothing if already off */
-	if (maca_pwr == 0) {DEBUGFLOW('v');return;}
+//	if (maca_pwr == 0) {DEBUGFLOW('v');return;}
+		if (maca_pwr == 0) return;
 
 	/* Stay on if busy */
 	/* Could wait here till complete and then go off */
@@ -1127,11 +1153,14 @@ void maca_off(void) {
 }
 
 void maca_on(void) {
+	/* Remember the explicit call. CCA will immediately reset this flag if it does the turnon */
+	automatic_cca_turnon = 0;
+//	radio_channel_busy = 0;
+
 	/* Do nothing if already on */
 	if (maca_pwr != 0) {
 		return;
 	}
-//	*MACA_CONTROL = 1 | (1 << maca_ctrl_asap); //abort
 	maca_pwr = 1;
 	
 	/* Turn the radio regulators back on */
@@ -1158,13 +1187,14 @@ void maca_on(void) {
 	last_post = NO_POST;
 	*MACA_CLRIRQ = 0xffff;
 	enable_irq(MACA);
-
+#if 1
 	/* Post CCA in anticipation of the next maca call */
 	/* When called by contiki_maca_transmit do_cca == -1 to skip this */
 	if(do_cca<0) {DEBUGFLOW('T');do_cca=0;} else {
 		do_cca=1;
 		*INTFRC = (1 << INT_NUM_MACA);
 	}
+#endif
 }
 
 /* initialized with 0x4c */
