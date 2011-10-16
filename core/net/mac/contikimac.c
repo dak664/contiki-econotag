@@ -532,7 +532,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
 #if WITH_CONTIKIMAC_HEADER
   struct hdr *chdr;
 #endif /* WITH_CONTIKIMAC_HEADER */
-
+//printf("send\n");
   if(packetbuf_totlen() == 0) {
     PRINTF("contikimac: send_packet data len 0\n");
     return MAC_TX_ERR_FATAL;
@@ -817,6 +817,75 @@ qsend_packet(mac_callback_t sent, void *ptr)
   }
 }
 /*---------------------------------------------------------------------------*/
+#if 0
+static void
+qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
+{
+  struct rdc_buf_list *curr = buf_list;
+  struct rdc_buf_list *next;
+  int ret;
+//  printf("List ");
+  if(curr == NULL) {
+//  printf("empty");
+    mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
+    return;
+  }
+ // printf("1");
+  /* Do not send during reception of a burst */
+  if(we_are_receiving_burst) {
+  
+//  printf("2");
+
+    queuebuf_to_packetbuf(curr->buf);
+    /* We try to defer, and return an error this wasn't possible */
+#if WITH_PHASE_OPTIMIZATION
+    int ret = phase_wait(&phase_list, packetbuf_addr(PACKETBUF_ADDR_RECEIVER),
+        CYCLE_TIME, GUARD_TIME,
+        sent, ptr, curr, 2);
+    if(ret != PHASE_DEFERRED) {
+      mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
+    }
+#endif
+      mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
+    return;
+  }
+  /* The receiver needs to be awoken before we send */
+//    printf("3");
+  is_receiver_awake = 0;
+  do { /* A loop sending a burst of packets from buf_list */
+ // printf(".");
+    next = list_item_next(curr);
+
+    /* Prepare the packetbuf */
+    queuebuf_to_packetbuf(curr->buf);
+    if(next != NULL) {
+      packetbuf_set_attr(PACKETBUF_ATTR_PENDING, 1);
+    }
+
+    /* Send the current packet */
+//	printf("qsend");
+    ret = send_packet(sent, ptr, curr);
+    if(ret != MAC_TX_DEFERRED) {
+	//printf("callback");
+      mac_call_sent_callback(sent, ptr, ret, 1);
+    }
+
+    if(ret == MAC_TX_OK) {
+      if(next != NULL) {
+        /* We're in a burst, no need to wake the receiver up again */
+        is_receiver_awake = 1;
+        curr = next;
+      }
+    } else {
+	//  printf("abort");
+      /* The transmission failed, we stop the burst */
+      next = NULL;
+    }
+  } while(next != NULL);
+ //   printf("4");
+  is_receiver_awake = 0;
+}
+#else
 static void
 qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
 {
@@ -829,16 +898,8 @@ qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
   }
   /* Do not send during reception of a burst */
   if(we_are_receiving_burst) {
-    queuebuf_to_packetbuf(curr->buf);
-    /* We try to defer, and return an error this wasn't possible */
-#if WITH_PHASE_OPTIMIZATION
-    int ret = phase_wait(&phase_list, packetbuf_addr(PACKETBUF_ADDR_RECEIVER),
-        CYCLE_TIME, GUARD_TIME,
-        sent, ptr, curr, 2);
-    if(ret != PHASE_DEFERRED) {
-      mac_call_sent_callback(sent, ptr, MAC_TX_ERR, 1);
-    }
-#endif
+    /* Return COLLISION so the MAC may try again later */
+    mac_call_sent_callback(sent, ptr, MAC_TX_COLLISION, 1);
     return;
   }
   /* The receiver needs to be awoken before we send */
@@ -871,6 +932,7 @@ qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
   } while(next != NULL);
   is_receiver_awake = 0;
 }
+#endif
 /*---------------------------------------------------------------------------*/
 /* Timer callback triggered when receiving a burst, after having waited for a next
    packet for a too long time. Turns the radio off and leaves burst reception mode */
@@ -915,6 +977,7 @@ input_packet(void)
 
       /* If FRAME_PENDING is set, we are receiving a packets in a burst */
       we_are_receiving_burst = packetbuf_attr(PACKETBUF_ATTR_PENDING);
+
       if(we_are_receiving_burst) {
         on();
         /* Set a timer to turn the radio off in case we do not receive a next packet */
@@ -932,6 +995,7 @@ input_packet(void)
           if(packetbuf_attr(PACKETBUF_ATTR_PACKET_ID) == received_seqnos[i].seqno &&
              rimeaddr_cmp(packetbuf_addr(PACKETBUF_ADDR_SENDER),
                           &received_seqnos[i].sender)) {
+	//					  printf("d");
             /* Drop the packet. */
             /*        printf("Drop duplicate ContikiMAC layer packet\n");*/
             return;
@@ -964,9 +1028,11 @@ input_packet(void)
       NETSTACK_MAC.input();
       return;
     } else {
+//	printf("f");
       PRINTDEBUG("contikimac: data not for us\n");
     }
   } else {
+//  printf("g");
     PRINTF("contikimac: failed to parse (%u)\n", packetbuf_totlen());
   }
 }
