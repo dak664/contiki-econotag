@@ -747,17 +747,21 @@ void maca_isr(void) {
 		}
 		*MACA_CLRIRQ = (1 << maca_irq_di);
 	}
+	/* Packet address did not pass filter. Need to abort reception so contikimac does not see a packet */
 	if (filter_failed_irq()) {
-		DEBUGFLOW('$');		DEBUGFLOW('$');		DEBUGFLOW('$');
 		PRINTF("maca filter failed\n\r");
-	//	RIMESTATS_ADD(badsynch);
 		*MACA_CLRIRQ = (1 << maca_irq_flt);
 		maca_receiving = 0;
+extern uint8_t packet_seen;
+		packet_seen=0;  //tell contikimac it can stop listening
 		if (*MACA_IRQ == 0) {	//no interrupts pending
 			GPIO->DATA_RESET.GPIO_45 = 1;  //greeen off
 			ENERGEST_OFF(ENERGEST_TYPE_LISTEN);
-//			DEBUGFLOW('N');
 			goto resumesync;
+		} else {//should not happen
+				*MACA_CLRIRQ = 0xffff;
+				DEBUGFLOW('$');DEBUGFLOW('$');DEBUGFLOW('P');
+				goto resumesync;
 		}
 	//	goto resumesync; //This seems to fix the border router hang...
 	}

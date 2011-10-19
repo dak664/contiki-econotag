@@ -60,7 +60,7 @@
 void
 print_stats(void)
 {
-#if RIMESTATS_CONF_ON || 1
+#if RIMESTATS_CONF_ON && 0
   PRINTA("S %d.%d clock %lu tx %lu rx %lu rtx %lu rrx %lu rexmit %lu acktx %lu noacktx %lu ackrx %lu timedout %lu badackrx %lu toolong %lu tooshort %lu badsynch %lu badcrc %lu contentiondrop %lu sendingdrop %lu lltx %lu llrx %lu\n",
 	 rimeaddr_node_addr.u8[0], rimeaddr_node_addr.u8[1],
 	 DISPLAYTIME,
@@ -74,7 +74,7 @@ print_stats(void)
 	 rimestats.lltx, rimestats.llrx);
 #endif
 
-#if ENERGEST_CONF_ON
+#if ENERGEST_CONF_ON && 0
 uint32_t displaytime=DISPLAYTIME;
 {
 uint8_t i;

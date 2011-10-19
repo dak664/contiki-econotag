@@ -65,7 +65,7 @@ extern uint8_t debugflowsize,debugflow[DEBUGFLOWSIZE];
 
 #define CONTIKIMAC_CONF_WITH_CONTIKIMAC_HEADER 0
 #define WITH_PHASE_OPTIMIZATION     0
-//#define WITH_FAST_SLEEP              0
+#define WITH_FAST_SLEEP              0
 
 #ifndef WITH_PHASE_OPTIMIZATION
 #define WITH_PHASE_OPTIMIZATION      1
@@ -136,8 +136,11 @@ static int is_receiver_awake = 0;
 
 /* LISTEN_TIME_AFTER_PACKET_DETECTED is the time that we keep checking
    for activity after a potential packet has been detected by a CCA
-   check. */
+   check. LISTEN_TIME_AFTER_PACKET_TO_ME_DETECTED is the time after a
+   unicast packet directed to the node. Setting longer than the TCP ack
+   turnaround will avoid much strobe activity. */
 #define LISTEN_TIME_AFTER_PACKET_DETECTED  RTIMER_ARCH_SECOND / 80
+#define LISTEN_TIME_AFTER_PACKET_TO_ME_DETECTED  RTIMER_ARCH_SECOND / 3
 
 /* MAX_SILENCE_PERIODS is the maximum amount of periods (a period is
    CCA_CHECK_TIME + CCA_SLEEP_TIME) that we allow to be silent before
@@ -339,6 +342,7 @@ powercycle_turn_radio_on(void)
     on();
   }
 }
+    uint8_t packet_seen;  //expose to radio driver
 /*---------------------------------------------------------------------------*/
 static char
 powercycle(struct rtimer *t, void *ptr)
@@ -348,15 +352,16 @@ powercycle(struct rtimer *t, void *ptr)
   cycle_start = RTIMER_NOW();
 
   while(1) {
-    static uint8_t packet_seen;
+ //   static uint8_t packet_seen;
     static rtimer_clock_t t0;
     static uint8_t count;
+	      static rtimer_clock_t start,listenend;
 
     cycle_start += CYCLE_TIME;
 
     packet_seen = 0;
 
-#if RADIO_CONF_MANAGECCAPOWER || 1
+#if RADIO_CONF_MANAGECCAPOWER && 0
 extern volatile uint8_t radio_channel_busy;
     radio_channel_busy = 0;
 
@@ -416,7 +421,10 @@ extern volatile uint8_t radio_channel_busy;
           packet_seen = 1;
           break;
         }
-        powercycle_turn_radio_off();
+		if(!RTIMER_CLOCK_LT(RTIMER_NOW(), listenend)) {
+			powercycle_turn_radio_off();
+		}
+		
       }
       schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_SLEEP_TIME);
 	  PT_YIELD(&pt);
@@ -425,22 +433,30 @@ extern volatile uint8_t radio_channel_busy;
 #endif
 
     if(packet_seen) {
-      static rtimer_clock_t start;
+ //     static rtimer_clock_t start;
       static uint8_t silence_periods, periods;
       start = RTIMER_NOW();
+	  listenend = start + LISTEN_TIME_AFTER_PACKET_DETECTED;
 
       periods = silence_periods = 0;
-      while(we_are_sending == 0 && radio_is_on &&
-            RTIMER_CLOCK_LT(RTIMER_NOW(),
-                            (start + LISTEN_TIME_AFTER_PACKET_DETECTED))) {
 
+ //     while(we_are_sending == 0 && radio_is_on &&
+       while( radio_is_on && 
+            RTIMER_CLOCK_LT(RTIMER_NOW(),listenend)) {
+//driver can cancel packet_seen if does not pass address filter
+		if (packet_seen == 0) {
+			listenend=0;
+	//		DEBUGFLOW('F');DEBUGFLOW('O');
+			 powercycle_turn_radio_off();
+			break;
+		}
         /* Check for a number of consecutive periods of
              non-activity. If we see two such periods, we turn the
              radio off. Also, if a packet has been successfully
              received (as indicated by the
              NETSTACK_RADIO.pending_packet() function), we stop
              snooping. */
-#if 0		//econotag much better with this out
+#if 0		//sleeps too soon causing repeated strobing of tcp segment acks from border router
         if(NETSTACK_RADIO.channel_clear()) {
           ++silence_periods;
         } else {
@@ -453,28 +469,33 @@ extern volatile uint8_t radio_channel_busy;
           silence_periods = 0;
         }
         if(silence_periods > MAX_SILENCE_PERIODS) {
-          powercycle_turn_radio_off();
-          break;
+  //        powercycle_turn_radio_off();
+   //       break;
         }
         if(WITH_FAST_SLEEP &&
             periods > MAX_NONACTIVITY_PERIODS &&
             !(NETSTACK_RADIO.receiving_packet() ||
               NETSTACK_RADIO.pending_packet())) {
-          powercycle_turn_radio_off();
-          break;
+   //       powercycle_turn_radio_off();
+      //    break;
         }
         if(NETSTACK_RADIO.pending_packet()) {
-          break;
+		//	DEBUGFLOW('P');
+		    listenend = start + LISTEN_TIME_AFTER_PACKET_TO_ME_DETECTED;
+            break;
         }
 
         schedule_powercycle(t, CCA_CHECK_TIME + CCA_SLEEP_TIME);
         PT_YIELD(&pt);
       }
+	//  	if (!radio_is_on) DEBUGFLOW('F');
+	//	if (we_are_sending) DEBUGFLOW('T');
       if(radio_is_on) {
         if(!(NETSTACK_RADIO.receiving_packet() ||
              NETSTACK_RADIO.pending_packet()) ||
              !RTIMER_CLOCK_LT(RTIMER_NOW(),
-                 (start + LISTEN_TIME_AFTER_PACKET_DETECTED))) {
+                 listenend)) {
+			//	 DEBUGFLOW('O');
           powercycle_turn_radio_off();
         }
       }
@@ -484,7 +505,7 @@ extern volatile uint8_t radio_channel_busy;
       schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
       PT_YIELD(&pt);
     } else {
-		DEBUGFLOW('E');
+//		DEBUGFLOW('E');
 	}
   }
 
@@ -655,7 +676,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
   
   /* Switch off the radio to ensure that we didn't start sending while
      the radio was doing a channel check. */
-  off();
+//  off();
 
 
   strobes = 0;
@@ -698,7 +719,7 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
     contikimac_is_on = contikimac_was_on;
     return MAC_TX_COLLISION;
   }
-#if 0
+#if 1
   if(!is_broadcast) {
   //I suspect this radio on is to receive unicast ack. Not necessary with hardware ack detection
      on();  //This does a cca on the econotag
@@ -750,18 +771,22 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
           collisions++;
         }
       }
+#if CONTIKIMAC_CONF_COMPOWER
+/* Assigned energy for repeated multicasts and noack unicasts to the mac layer */
+	    compower_accumulate(&compower_idle_activity);
+#endif
       previous_txtime = txtime;
     }
   }
 
-  off();
+//  off();
 
   PRINTF("contikimac: send (strobes=%u, len=%u, %s, %s), done\n", strobes,
          packetbuf_totlen(),
          got_strobe_ack ? "ack" : "no ack",
          collisions ? "collision" : "no collision");
 
-#if CONTIKIMAC_CONF_COMPOWER
+#if CONTIKIMAC_CONF_COMPOWER&&0
   /* Accumulate the power consumption for the packet transmission. */
   compower_accumulate(&current_packet);
 
@@ -788,6 +813,20 @@ send_packet(mac_callback_t mac_callback, void *mac_callback_ptr, struct rdc_buf_
     ret = MAC_TX_NOACK;
   } else {
     ret = MAC_TX_OK;
+#if CONTIKIMAC_CONF_COMPOWER
+  /* Accumulate the power consumption for the packet transmission. */
+  compower_accumulate(&current_packet);
+
+  /* Convert the accumulated power consumption for the transmitted
+     packet to packet attributes so that the higher levels can keep
+     track of the amount of energy spent on transmitting the
+     packet. */
+  compower_attrconv(&current_packet);
+
+  /* Clear the accumulated power consumption so that it is ready for
+     the next packet. */
+  compower_clear(&current_packet);
+#endif /* CONTIKIMAC_CONF_COMPOWER */
   }
 
 #if WITH_PHASE_OPTIMIZATION
@@ -939,7 +978,8 @@ qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
 static void
 recv_burst_off(void *ptr)
 {
-  off();
+DEBUGFLOW('B');
+ // off();
   we_are_receiving_burst = 0;
 }
 /*---------------------------------------------------------------------------*/
@@ -948,7 +988,7 @@ input_packet(void)
 {
   static struct ctimer ct;
   if(!we_are_receiving_burst) {
-    off();
+ //   off();
   }
 
   /*  printf("cycle_start 0x%02x 0x%02x\n", cycle_start, cycle_start % CYCLE_TIME);*/
@@ -983,7 +1023,7 @@ input_packet(void)
         /* Set a timer to turn the radio off in case we do not receive a next packet */
         ctimer_set(&ct, INTER_PACKET_DEADLINE, recv_burst_off, NULL);
       } else {
-        off();
+  //      off();
         ctimer_stop(&ct);
       }
 
@@ -998,6 +1038,9 @@ input_packet(void)
 	//					  printf("d");
             /* Drop the packet. */
             /*        printf("Drop duplicate ContikiMAC layer packet\n");*/
+#if CONTIKIMAC_CONF_COMPOWER
+      compower_accumulate(&compower_idle_activity);
+#endif
             return;
           }
         }
