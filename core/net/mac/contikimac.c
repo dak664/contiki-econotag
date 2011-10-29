@@ -426,8 +426,22 @@ extern volatile uint8_t radio_channel_busy;
 		}
 		
       }
-      schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_SLEEP_TIME);
-	  PT_YIELD(&pt);
+#if 0
+{static uint8_t sleepcycle;
+/* Go back to main loop periodically */
+	if (sleepcycle++>8) {
+		sleepcycle = 0;
+	    schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_SLEEP_TIME);
+		PT_YIELD(&pt);
+	} else {
+	void mc1322x_sleep(uint32_t howlong);
+	  mc1322x_sleep(CCA_SLEEP_TIME);
+	}
+}
+#else
+	 schedule_powercycle_fixed(t, RTIMER_NOW() + CCA_SLEEP_TIME);
+     PT_YIELD(&pt);
+#endif
     }
 
 #endif
@@ -500,12 +514,25 @@ extern volatile uint8_t radio_channel_busy;
         }
       }
     }
-
+	
     if(RTIMER_CLOCK_LT(RTIMER_NOW() - cycle_start, CYCLE_TIME - CHECK_TIME * 4)) {
+#if 1
+{static uint8_t sleepcycle;
+/* Go back to main loop periodically */
+	if ((sleepcycle++<32) && !we_are_sending && !radio_is_on) {
+void mc1322x_sleep(uint32_t howlong);
+	    mc1322x_sleep(CYCLE_TIME - (RTIMER_NOW() - cycle_start));
+	} else {
+		sleepcycle = 0;
+        schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
+        PT_YIELD(&pt);
+	}
+}
+#else
       schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
       PT_YIELD(&pt);
-    } else {
-//		DEBUGFLOW('E');
+
+#endif
 	}
   }
 

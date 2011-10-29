@@ -531,8 +531,7 @@ generate_sensor_readings(void *arg)
   static const char httpd_cgi_sensor2[] HTTPD_STRING_ATTR = "<em>Battery    :</em> %s\n";
 //  static const char httpd_cgi_sensr12[] HTTPD_STRING_ATTR = "<em>Temperature:</em> %s   <em>Battery:</em> %s<br>";
   static const char httpd_cgi_sensor3[] HTTPD_STRING_ATTR = "<em>Uptime     :</em> %02d:%02d:%02d\n";
-  static const char httpd_cgi_sensor3d[] HTTPD_STRING_ATTR = "<em>Uptime    :</em> %u days %02u:%02u:%02u/n";
-// static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR = "<em>Sleeping time :</em> %02d:%02d:%02d (%d%%)<br>";
+  static const char httpd_cgi_sensor3d[] HTTPD_STRING_ATTR = "<em>Uptime    :</em> %u days %02u:%02u:%02u\n";
 
   numprinted=0;
   if (last_tempupdate) {
@@ -596,9 +595,20 @@ generate_sensor_readings(void *arg)
 #else
   energest_flush();
 #endif
-
+//  static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR = "<em>Sleep time :</em> %02d:%02d:%02d (%d%%)\n";
+  static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR =  "<em>CPU time   (ENERGEST):</em> %02d:%02d:%02d (%d%%)\n";
   static const char httpd_cgi_sensor10[] HTTPD_STRING_ATTR = "<em>Radio      (ENERGEST):</em> Tx %02u:%02u:%02u (%u.%02u%%)  ";
   static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "Rx %02u:%02u:%02u (%u.%02u%%)\n";
+
+  sl=energest_total_time[ENERGEST_TYPE_CPU].current/RTIMER_ARCH_SECOND;
+   if (sl > 0) {
+    h=(10000UL*sl)/seconds;p1=h/100;p2=h-p1*100;h=sl/3600;s=sl-h*3600;m=s/60;s=s-m*60;
+    numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor4, h,m,s,p1,p2);
+    if (*(char *)(uip_appdata + numprinted-4)==0) {numprinted-=4;}
+    else if (*(char *)(uip_appdata + numprinted-3)==0) {numprinted-=3;}
+    else if (*(char *)(uip_appdata + numprinted-2)==0) {numprinted-=2;}
+    else if (*(char *)(uip_appdata + numprinted-1)==0) {numprinted-=1;}
+  }
   sl=energest_total_time[ENERGEST_TYPE_TRANSMIT].current/RTIMER_ARCH_SECOND;
   h=(10000UL*sl)/seconds;p1=h/100;p2=h-p1*100;h=sl/3600;s=sl-h*3600;m=s/60;s=s-m*60;
   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor10, h,m,s,p1,p2);

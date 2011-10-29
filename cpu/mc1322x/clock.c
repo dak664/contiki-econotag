@@ -37,6 +37,7 @@
 #include <sys/cc.h>
 #include <sys/etimer.h>
 #include "dev/leds.h"
+#include "rtimer-arch.h"
 
 #include "contiki-conf.h"
 #include "mc1322x.h"
@@ -79,6 +80,17 @@ clock_init()
 
 	enable_irq(TMR);
 
+}
+void clock_adjust_sleep_ticks(uint32_t rtimerticks) {
+	uint32_t ticks;
+/* Convert rtimer ticks to clock ticks */
+	ticks=(CLOCK_CONF_SECOND*rtimerticks)/RTIMER_ARCH_SECOND;
+/* Add seconds */
+	seconds+=ticks/CLOCK_CONF_SECOND;
+/* Handle tick overflow */
+	if(((current_clock % CLOCK_CONF_SECOND) + (ticks % CLOCK_CONF_SECOND)) >= CLOCK_CONF_SECOND) seconds++;
+/* Add ticks */
+	current_clock+=ticks;
 }
 
 void tmr0_isr(void) {

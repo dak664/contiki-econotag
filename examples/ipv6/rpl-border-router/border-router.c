@@ -232,6 +232,13 @@ PROCESS_THREAD(border_router_process, ev, data)
 
   PRINTF("RPL-Border router started\n");
 
+   /* The border router runs with a 100% duty cycle in order to ensure high
+     packet reception rates. */
+	/* This moved before the prefix set, aggressive contikimac cpu cycling will corrupt the RS232 output and
+	  delay establishing the SLIP connection */
+  NETSTACK_MAC.off(1);
+ 
+  
   /* Request prefix until it has been received */
   while(!prefix_set) {
     etimer_set(&et, CLOCK_SECOND);
@@ -251,7 +258,7 @@ PROCESS_THREAD(border_router_process, ev, data)
 
   /* The border router runs with a 100% duty cycle in order to ensure high
      packet reception rates. */
-  NETSTACK_MAC.off(1);
+ // NETSTACK_MAC.off(1);
 
   while(1) {
     PROCESS_YIELD();

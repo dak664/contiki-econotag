@@ -971,7 +971,29 @@ resumesync:
 }
 
 static uint8_t ram_values[4];
+/* howlong is in rtimer ticks */
+void mc1322x_sleep(uint32_t howlong)
+{	
+	ENERGEST_OFF(ENERGEST_TYPE_CPU);
+	*CRM_WU_CNTL = 0x1; /* enable wakeup from wakeup timer */
+	*CRM_WU_TIMEOUT =  howlong;
+	*CRM_SLEEP_CNTL = 0x71; /* hibernate, all RAM pages, retain state, don't power GPIO */ /* approx. 2kHz = 16.1uA */
 
+	/* wait for the sleep cycle to complete */
+	while((*CRM_STATUS & 0x1) == 0) { continue; }
+	/* write 1 to sleep_sync --- this clears the bit (it's a r1wc bit) and powers down */
+	*CRM_STATUS = 1; 
+	
+	/* asleep */
+
+	/* wait for the awake cycle to complete */
+	while((*CRM_STATUS & 0x1) == 0) { continue; }
+	/* write 1 to sleep_sync --- this clears the bit (it's a r1wc bit) and finishes wakeup */
+	*CRM_STATUS = 1; 
+	ENERGEST_ON(ENERGEST_TYPE_CPU);
+extern void clock_adjust_sleep_ticks(uint32_t rtimerticks);
+	clock_adjust_sleep_ticks(howlong);
+}
 
 void init_phy(void)
 {
@@ -1243,6 +1265,9 @@ uint8_t get_ctov( uint32_t r0, uint32_t r1 )
 /* radio_init has been tested to be good */
 void radio_init(void) {
 	volatile uint32_t i;
+	/* A convenient platform-independent place to start CPU ENERGEST timing */
+	ENERGEST_ON(ENERGEST_TYPE_CPU);
+
 	/* sequence 1 */
 	for(i=0; i<MAX_SEQ1; i++) {
 		*(volatile uint32_t *)(addr_seq1[i]) = data_seq1[i];

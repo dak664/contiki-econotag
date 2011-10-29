@@ -148,9 +148,8 @@ LIST(queuebuf_list);
 uint8_t queuebuf_len, queuebuf_ref_len, queuebuf_max_len;
 #endif /* QUEUEBUF_STATS */
 
-static void queuebuf_remove_from_file(int swap_id);
-
 #if WITH_SWAP
+static void queuebuf_remove_from_file(int swap_id);
 /*---------------------------------------------------------------------------*/
 static void
 qbuf_renew_file(int file)
