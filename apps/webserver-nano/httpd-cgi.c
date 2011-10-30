@@ -550,7 +550,24 @@ generate_sensor_readings(void *arg)
   while (ADCSRA&(1<<ADSC)); //Wait till done
   h=1131632UL/ADC;          //Get supply voltage
 #endif
+#if 1
+#include "adc.h"
+{
+uint8_t c;
+		adc_init();
+		for (c=0; c<NUM_ADC_CHAN; c++) {
+			adc_service();
+	//		printf("%u %04u\r\n", c, adc_reading[c]);
+		}
+		adc_disable();
+		if (adc_reading[8]) snprintf(sensor_extvoltage, sizeof(sensor_extvoltage),"%u mV",1200*0xfff/adc_reading[8]);
 
+		static const char httpd_cgi_sensorv[] HTTPD_STRING_ATTR = "<em>ADC chans  :</em> %u %u %u %u %u %u %u %u \n";
+	    numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensorv,
+		    adc_reading[0],adc_reading[1],adc_reading[2],adc_reading[3],adc_reading[4],adc_reading[5],adc_reading[6],adc_reading[7]);
+
+}
+#endif
   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensor2, sensor_extvoltage);
 //   numprinted+=httpd_snprintf((char *)uip_appdata+numprinted, uip_mss()-numprinted, httpd_cgi_sensr12, sensor_temperature,sensor_extvoltage);
 
@@ -596,7 +613,7 @@ generate_sensor_readings(void *arg)
   energest_flush();
 #endif
 //  static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR = "<em>Sleep time :</em> %02d:%02d:%02d (%d%%)\n";
-  static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR =  "<em>CPU time   (ENERGEST):</em> %02d:%02d:%02d (%d%%)\n";
+  static const char httpd_cgi_sensor4[] HTTPD_STRING_ATTR =  "<em>CPU time   (ENERGEST):</em> %02u:%02u:%02u (%u.%02u%%)\n";
   static const char httpd_cgi_sensor10[] HTTPD_STRING_ATTR = "<em>Radio      (ENERGEST):</em> Tx %02u:%02u:%02u (%u.%02u%%)  ";
   static const char httpd_cgi_sensor11[] HTTPD_STRING_ATTR = "Rx %02u:%02u:%02u (%u.%02u%%)\n";
 
