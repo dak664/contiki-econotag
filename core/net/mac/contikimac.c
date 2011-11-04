@@ -519,10 +519,13 @@ extern volatile uint8_t radio_channel_busy;
 #if 1
 {static uint8_t sleepcycle;
 /* Go back to main loop periodically */
-	if ((sleepcycle++<32) && !we_are_sending && !radio_is_on) {
+	if ((sleepcycle++<8) && !we_are_sending && !radio_is_on) {
 void mc1322x_sleep(uint32_t howlong);
 	    mc1322x_sleep(CYCLE_TIME - (RTIMER_NOW() - cycle_start));
 	} else {
+		void cal_ring_osc(void);
+//	cal_ring_osc();
+//	adc_reading[0]=*CRM_CAL_COUNT;
 		sleepcycle = 0;
         schedule_powercycle_fixed(t, CYCLE_TIME + cycle_start);
         PT_YIELD(&pt);
@@ -1005,7 +1008,7 @@ qsend_list(mac_callback_t sent, void *ptr, struct rdc_buf_list *buf_list)
 static void
 recv_burst_off(void *ptr)
 {
-DEBUGFLOW('B');
+//DEBUGFLOW('B');
  // off();
   we_are_receiving_burst = 0;
 }

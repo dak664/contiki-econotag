@@ -106,16 +106,16 @@ void enable_32khz_xtal(void)
 void cal_ring_osc(void)
 {
 	uint32_t cal_factor;
-	PRINTF("performing ring osc cal\n\r");
-	PRINTF("crm_status: 0x%0x\n\r",*CRM_STATUS);
-	PRINTF("sys_cntl: 0x%0x\n\r",*CRM_SYS_CNTL); 
+//	PRINTF("performing ring osc cal\n\r");
+//	PRINTF("crm_status: 0x%0x\n\r",*CRM_STATUS);
+////	PRINTF("sys_cntl: 0x%0x\n\r",*CRM_SYS_CNTL); 
 	*CRM_CAL_CNTL = (1<<16) | (20000); 
 	while((*CRM_STATUS & (1<<9)) == 0);
-	PRINTF("ring osc cal complete\n\r");
-	PRINTF("cal_count: 0x%0x\n\r",*CRM_CAL_COUNT); 
+//	PRINTF("ring osc cal complete\n\r");
+	PRINTF("*****cal_count: 0x%0x\n\r",*CRM_CAL_COUNT); 
 	cal_factor = (REF_OSC*1000) / *CRM_CAL_COUNT;
 	cal_rtc_secs = (NOMINAL_RING_OSC_SEC * cal_factor)/100;
-	PRINTF("cal factor: %d\n\r", cal_factor);
-	PRINTF("hib_wake_secs: %d\n\r", cal_rtc_secs);      
+//	PRINTF("cal factor: %d\n\r", cal_factor);
+//	PRINTF("hib_wake_secs: %d\n\r", cal_rtc_secs);      
 	set_bit(*CRM_STATUS,9);
 }

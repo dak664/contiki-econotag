@@ -217,7 +217,7 @@ typedef unsigned long rtimer_clock_t;
 #define UIP_CONF_ND6_MAX_NEIGHBORS      4
 #define UIP_CONF_ND6_MAX_DEFROUTERS     2
 #define UIP_CONF_IP_FORWARD             0
-#define UIP_CONF_BUFFER_SIZE		1300
+#define UIP_CONF_BUFFER_SIZE		UIP_LINK_MTU
 #define SICSLOWPAN_CONF_FRAG            1
 #define SICSLOWPAN_CONF_MAXAGE          8
 
@@ -233,7 +233,7 @@ typedef unsigned long rtimer_clock_t;
 #define SICSLOWPAN_CONF_MAX_ADDR_CONTEXTS       2
 #else /* WITH_UIP6 */
 #define UIP_CONF_IP_FORWARD      1
-#define UIP_CONF_BUFFER_SIZE     1300
+#define UIP_CONF_BUFFER_SIZE     UIP_LINK_MTU
 #endif /* WITH_UIP6 */
 
 #define UIP_CONF_ICMP_DEST_UNREACH 1
