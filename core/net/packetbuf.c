@@ -64,7 +64,7 @@ static uint16_t packetbuf_aligned[(PACKETBUF_SIZE + PACKETBUF_HDR_SIZE) / 2 + 1]
 static uint8_t *packetbuf = (uint8_t *)packetbuf_aligned;
 
 static uint8_t *packetbufptr;
-
+#include <stdio.h>
 #define DEBUG 0
 #if DEBUG
 #include <stdio.h>
@@ -207,6 +207,10 @@ packetbuf_set_datalen(uint16_t len)
 void *
 packetbuf_dataptr(void)
 {
+
+//printf("size of packetbuf %u",sizeof(packetbuf_aligned));
+//printf("bufptr %u",bufptr);
+//printf("HDRSIZE %u",PACKETBUF_HDR_SIZE);
   return (void *)(&packetbuf[bufptr + PACKETBUF_HDR_SIZE]);
 }
 /*---------------------------------------------------------------------------*/

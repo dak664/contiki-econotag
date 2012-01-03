@@ -123,10 +123,11 @@ typedef unsigned long rtimer_clock_t;
 #ifndef NETSTACK_CONF_NETWORK
 #define NETSTACK_CONF_NETWORK sicslowpan_driver
 #endif
+#define NETSTACK_CONF_MAC     csma_driver 
 #ifndef NETSTACK_CONF_MAC
 #define NETSTACK_CONF_MAC     nullmac_driver 
 #endif
-/*#define NETSTACK_CONF_RDC     contikimac_driver*/ /* contikimac for redbee hasn't been well tested */
+#define NETSTACK_CONF_RDC     contikimac_driver
 #ifndef NETSTACK_CONF_RDC
 #define NETSTACK_CONF_RDC     nullrdc_driver
 #endif

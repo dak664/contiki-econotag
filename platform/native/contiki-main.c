@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/select.h>
+#include <string.h>
 
 #include "contiki.h"
 #include "contiki-net.h"
@@ -44,6 +45,12 @@
 #include "dev/serial-line.h"
 
 #include "net/uip.h"
+#ifdef __CYGWIN__
+#include "net/wpcap-drv.h"
+#else /* __CYGWIN__ */
+#include "net/tapdev-drv.h"
+#endif /* __CYGWIN__ */
+
 
 #include "dev/button-sensor.h"
 #include "dev/pir-sensor.h"
@@ -69,6 +76,16 @@ main(void)
 
   serial_line_init();
 
+#ifdef __CYGWIN__
+  addr.u8[0] = 0x00;
+  addr.u8[1] = 0x50;
+  addr.u8[2] = 0xc2;
+  addr.u8[3] = 0xff;
+  addr.u8[4] = 0xfe;
+  addr.u8[5] = 0xa8;
+  addr.u8[6] = 0xcd;
+  addr.u8[7] = 0x1a;
+#else
 //00:50:C2:A8:C6:C8:3E:99
   addr.u8[0] = 0;
   addr.u8[1] = 0x50;
@@ -78,10 +95,15 @@ main(void)
   addr.u8[5] = 0xc8;
   addr.u8[6] = 0x3e;
   addr.u8[7] = 0x99;
+#endif
   rimeaddr_set_node_addr(&addr);
   memcpy(&uip_lladdr.addr, &addr.u8, sizeof(uip_lladdr.addr));
 
   process_start(&tcpip_process, NULL);
+
+#ifdef __CYGWIN__
+  process_start(&wpcap_process, NULL);
+#endif
   
   autostart_start(autostart_processes);
 
@@ -95,7 +117,7 @@ main(void)
     struct timeval tv;
     
     n = process_run();
-
+#if 0
     tv.tv_sec = 0;
     tv.tv_usec = 1;
 
@@ -109,9 +131,14 @@ main(void)
 	serial_line_input_byte(c);
       }
     }
+#endif
     
+void slip_arch_read(void);
     slip_arch_read();
+#ifdef __CYGWIN__
+#else
     tun_arch_read();
+#endif
 
     etimer_request_poll();
   }

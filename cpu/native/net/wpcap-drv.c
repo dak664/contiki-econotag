@@ -31,6 +31,10 @@
  * @(#)$Id: wpcap-drv.c,v 1.7 2010/10/19 18:29:04 adamdunkels Exp $
  */
 
+#define WIN32_LEAN_AND_MEAN
+#define _WIN32_WINNT 0x0501
+#include <windows.h>  //CopyMemory
+
 #include "contiki-net.h"
 #include "net/uip-neighbor.h"
 #include "net/wpcap.h"
@@ -39,7 +43,7 @@
 
 #define BUF ((struct uip_eth_hdr *)&uip_buf[0])
 #define IPBUF ((struct uip_tcpip_hdr *)&uip_buf[UIP_LLH_LEN])
-
+#define FALLBACK_HAS_ETHERNET_HEADERS  1
 PROCESS(wpcap_process, "WinPcap driver");
 
 /*---------------------------------------------------------------------------*/
@@ -57,6 +61,7 @@ wpcap_output(void)
 static void
 pollhandler(void)
 {
+#if !FALLBACK_HAS_ETHERNET_HEADERS //native br is fallback only
   process_poll(&wpcap_process);
   uip_len = wpcap_poll();
 
@@ -83,14 +88,24 @@ pollhandler(void)
       uip_len = 0;
     }
   }
-
+#endif
 #ifdef UIP_FALLBACK_INTERFACE
 
   process_poll(&wpcap_process);
   uip_len = wfall_poll();
 
   if(uip_len > 0) {
-#if UIP_CONF_IPV6
+#if FALLBACK_HAS_ETHERNET_HEADERS
+    if(BUF->type == uip_htons(UIP_ETHTYPE_IPV6)) {
+	//remove ethernet header and pass ipv6 packet to stack
+	uip_len-=14;
+//{int i;printf("\n");for (i=0;i<uip_len;i++) printf("%02x ",*(char*)(uip_buf+i));printf("\n");}	
+	CopyMemory(uip_buf, uip_buf+14, uip_len);
+//{int i;printf("\n");for (i=0;i<uip_len;i++) printf("%02x ",*(char*)(uip_buf+i));printf("\n");}	
+      tcpip_input();
+    } else
+	 goto bail;
+#elif UIP_CONF_IPV6
     if(BUF->type == uip_htons(UIP_ETHTYPE_IPV6)) {
       tcpip_input();
     } else
@@ -129,7 +144,9 @@ PROCESS_THREAD(wpcap_process, ev, data)
 #if !UIP_CONF_IPV6
   tcpip_set_outputfunc(wpcap_output);
 #else
+#if !FALLBACK_HAS_ETHERNET_HEADERS
   tcpip_set_outputfunc(wpcap_send);
+#endif
 #endif /* !UIP_CONF_IPV6 */
 
   process_poll(&wpcap_process);

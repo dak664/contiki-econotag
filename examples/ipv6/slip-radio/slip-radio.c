@@ -21,7 +21,7 @@
 #define SLIP_ESC_END 0334
 #define SLIP_ESC_ESC 0335
 
-#define DEBUG 1
+#define DEBUG 0
 #if DEBUG
 #include <stdio.h>
 #define PRINTF(...) printf(__VA_ARGS__)
@@ -52,7 +52,7 @@ slip_radio_input(void)
 #if DEBUG
 	{
 		int i;
-		PRINTF("ADDR_RECEIVER ");		
+		PRINTF("ADDR_RECEIVER DAK ");		
 		for (i = 0; i < RIMEADDR_SIZE; i++) {
 			PRINTF("%02x:",addr.u8[i]);
 		}
@@ -123,6 +123,7 @@ static void
 init(void)
 {
   slip_arch_init(BAUD2UBR(115200));
+ //   slip_arch_init(BAUD2UBR(230400));
   process_start(&slip_process, NULL);
   slip_set_input_callback(slip_input_callback);
 }

@@ -492,12 +492,14 @@ compress_hdr_hc06(rimeaddr_t *rime_destaddr)
 {
   uint8_t tmp, iphc0, iphc1;
 #if DEBUG
+{uint16_t ndx;
   PRINTF("before compression (%d): ", UIP_IP_BUF->len[1]);
-  for(tmp = 0; tmp < UIP_IP_BUF->len[1] + 40; tmp++) {
-    uint8_t data = ((uint8_t *) (UIP_IP_BUF))[tmp];
+  for(ndx = 0; ndx < UIP_IP_BUF->len[1] + 40; ndx++) {
+    uint8_t data = ((uint8_t *) (UIP_IP_BUF))[ndx];
     PRINTF("%02x", data);
   }
   PRINTF("\n");
+}
 #endif
 
   hc06_ptr = rime_ptr + 2;
@@ -1364,6 +1366,7 @@ send_packet(rimeaddr_t *dest)
 static uint8_t
 output(uip_lladdr_t *localdest)
 {
+//uint16_t saveuip_len;
   /* The MAC address of the destination of the packet */
   rimeaddr_t dest;
 
@@ -1470,12 +1473,15 @@ output(uip_lladdr_t *localdest)
       PRINTFO("could not allocate queuebuf for first fragment, dropping packet\n");
       return 0;
     }
+//	saveuip_len = uip_len;
     send_packet(&dest);
+//	uip_len = saveuip_len;
     queuebuf_to_packetbuf(q);
     queuebuf_free(q);
     q = NULL;
 
     /* set processed_ip_len to what we already sent from the IP payload*/
+//	printf("set processed length %u + %u\n",rime_payload_len,uncomp_hdr_len);
     processed_ip_len = rime_payload_len + uncomp_hdr_len;
     
     /*
@@ -1489,6 +1495,7 @@ output(uip_lladdr_t *localdest)
     SET16(RIME_FRAG_PTR, RIME_FRAG_DISPATCH_SIZE,
           ((SICSLOWPAN_DISPATCH_FRAGN << 8) | uip_len));
     rime_payload_len = (MAC_MAX_PAYLOAD - rime_hdr_len) & 0xf8;
+//	printf("processed len %u, uip len %u\n",processed_ip_len,uip_len);
     while(processed_ip_len < uip_len) {
       PRINTFO("sicslowpan output: fragment ");
       RIME_FRAG_PTR[RIME_FRAG_OFFSET] = processed_ip_len >> 3;
@@ -1508,7 +1515,9 @@ output(uip_lladdr_t *localdest)
         PRINTFO("could not allocate queuebuf, dropping fragment\n");
         return 0;
       }
+//	  saveuip_len = uip_len;
       send_packet(&dest);
+//	  uip_len = saveuip_len;
       queuebuf_to_packetbuf(q);
       queuebuf_free(q);
       q = NULL;
@@ -1580,7 +1589,7 @@ input(void)
    */
   switch((GET16(RIME_FRAG_PTR, RIME_FRAG_DISPATCH_SIZE) & 0xf800) >> 8) {
     case SICSLOWPAN_DISPATCH_FRAG1:
-      PRINTFI("sicslowpan input: FRAG1 ");
+      PRINTFI("\nsicslowpan input: FRAG1 ");
       frag_offset = 0;
 /*       frag_size = (uip_ntohs(RIME_FRAG_BUF->dispatch_size) & 0x07ff); */
       frag_size = GET16(RIME_FRAG_PTR, RIME_FRAG_DISPATCH_SIZE) & 0x07ff;
@@ -1607,10 +1616,12 @@ input(void)
 
       /* If this is the last fragment, we may shave off any extrenous
          bytes at the end. We must be liberal in what we accept. */
-      PRINTFI("last_fragment?: processed_ip_len %d rime_payload_len %d frag_size %d\n",
-              processed_ip_len, packetbuf_datalen() - rime_hdr_len, frag_size);
+  //    PRINTFI("last_fragment?: processed_ip_len %d rime_payload_len %d frag_size %d\n",
+   //           processed_ip_len, packetbuf_datalen() - rime_hdr_len, frag_size);
 
       if(processed_ip_len + packetbuf_datalen() - rime_hdr_len >= frag_size) {
+	        PRINTFI("last_fragment?: processed_ip_len %d rime_payload_len %d frag_size %d\n",
+              processed_ip_len, packetbuf_datalen() - rime_hdr_len, frag_size);
         last_fragment = 1;
       }
       break;
@@ -1620,7 +1631,9 @@ input(void)
 
   if(processed_ip_len > 0) {
     /* reassembly is ongoing */
-    /*    printf("frag %d %d\n", reass_tag, frag_tag);*/
+//	printf("frag size %u", frag_size);
+	//if (rimeaddr_cmp(&frag_sender, packetbuf_addr(PACKETBUF_ADDR_SENDER))) printf("sender matches");else printf("sender does not match");
+  //     printf("frag %d %d\n", reass_tag, frag_tag);
     if((frag_size > 0 &&
         (frag_size != sicslowpan_len ||
          reass_tag  != frag_tag ||
@@ -1702,6 +1715,7 @@ input(void)
     return;
   }
   rime_payload_len = packetbuf_datalen() - rime_hdr_len;
+ // printf("copy payload: rime_payload_len %u\n",rime_payload_len);
   memcpy((uint8_t *)SICSLOWPAN_IP_BUF + uncomp_hdr_len + (uint16_t)(frag_offset << 3), rime_ptr + rime_hdr_len, rime_payload_len);
   
   /* update processed_ip_len if fragment, sicslowpan_len otherwise */
@@ -1744,10 +1758,10 @@ input(void)
 
 #if DEBUG
     {
-      uint8_t tmp;
-      PRINTF("after decompression: ");
-      for (tmp = 0; tmp < SICSLOWPAN_IP_BUF->len[1] + 40; tmp++) {
-	uint8_t data = ((uint8_t *) (SICSLOWPAN_IP_BUF))[tmp];
+      uint16_t ndx;
+      PRINTF("after decompression %u:", SICSLOWPAN_IP_BUF->len[1]);
+      for (ndx = 0; ndx < SICSLOWPAN_IP_BUF->len[1] + 40; ndx++) {
+	uint8_t data = ((uint8_t *) (SICSLOWPAN_IP_BUF))[ndx];
 	PRINTF("%02x", data);
       }
       PRINTF("\n");

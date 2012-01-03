@@ -124,13 +124,18 @@ slip_arch_writeb(unsigned char c)
 void
 slip_arch_init(unsigned long ubr)
 {
+#ifdef __CYGWIN__
+//TODO:pass this as command line arg
+	char *siodev = "/dev/com5";
+#else
 	char *siodev = "/dev/ttyUSB1";
+#endif
 	slipfd = open(siodev, O_RDWR | O_NONBLOCK);
-	FD_ZERO(&slipfds);
-	FD_SET(slipfd, &slipfds);
 	if(slipfd == -1) {
 		err(1, "can't open siodev ``/dev/%s''", siodev);
 	}
+	FD_ZERO(&slipfds);
+	FD_SET(slipfd, &slipfds);
 	set_stty(slipfd);
 }
 /*---------------------------------------------------------------------------*/

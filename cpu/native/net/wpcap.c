@@ -59,6 +59,10 @@
 
 #include "net/wpcap.h"
 
+/* Handle case where the fallback has ethernet headers */
+//this should probably be in project-conf.h
+#define FALLBACK_HAS_ETHERNET_HEADERS  1
+
 #if UIP_CONF_IPV6
 #include <ws2tcpip.h>
 struct in6_addr addr6;
@@ -173,22 +177,29 @@ init(void)
 }
 /*---------------------------------------------------------------------------*/
 u8_t wfall_send(uip_lladdr_t *lladdr);
+#if FALLBACK_HAS_ETHERNET_HEADERS
+#define UIP_IP_BUF        ((struct uip_ip_hdr *)&uip_buf[14])
+#define BUF ((struct uip_eth_hdr *)&uip_buf[0])
+#define IPBUF ((struct uip_tcpip_hdr *)&uip_buf[14])
+static uip_ipaddr_t last_sender;
+#else
 #define UIP_IP_BUF        ((struct uip_ip_hdr *)&uip_buf[UIP_LLH_LEN])
+#define BUF ((struct uip_eth_hdr *)&uip_buf[0])
+#define IPBUF ((struct uip_tcpip_hdr *)&uip_buf[UIP_LLH_LEN])
+#endif
+
 static void
 output(void)
 {
-#if 0
+#if FALLBACK_HAS_ETHERNET_HEADERS
   if(uip_ipaddr_cmp(&last_sender, &UIP_IP_BUF->srcipaddr)) {
     /* Do not bounce packets back to fallback if the packet was received from it */
-    PRINTF("fallback: Destination off-link but no route src=");
-    PRINT6ADDR(&UIP_IP_BUF->srcipaddr);
-    PRINTF(" dst=");
-    PRINT6ADDR(&UIP_IP_BUF->destipaddr);
-    PRINTF("\n");
-  } else {
+    PRINTF("FUT: trapping pingpong");
+	return;
+  }
 #endif
-    PRINTF("FUT: %u\n", uip_len);
-	wfall_send(0);
+  PRINTF("FUT: %u\n", uip_len);
+  wfall_send(0);
 }
 
 const struct uip_fallback_interface rpl_interface = {
@@ -196,9 +207,6 @@ const struct uip_fallback_interface rpl_interface = {
 };
 
 #endif
-
-#define BUF ((struct uip_eth_hdr *)&uip_buf[0])
-#define IPBUF ((struct uip_tcpip_hdr *)&uip_buf[UIP_LLH_LEN])
 
 /*---------------------------------------------------------------------------*/
 static void
@@ -494,8 +502,8 @@ wpcap_init(void)
         uiplib_ipaddrconv(WPCAP_FALLBACK_ADDRESS,(uip_ipaddr_t*) &addrfall6.s6_addr);
 //	  }
 #else
-//    addrfall.s_addr = inet_addr("10.2.10.10");
-      uiplib_ipaddrconv("bbbb::1",(uip_ipaddr_t*) &addrfall6.s6_addr);
+      addrfall.s_addr = inet_addr("10.1.10.10");
+//      uiplib_ipaddrconv("bbbb::1",(uip_ipaddr_t*) &addrfall6.s6_addr);
 #endif
     }
   }
@@ -509,7 +517,7 @@ wpcap_init(void)
         uiplib_ipaddrconv(WPCAP_INTERFACE_ADDRESS,(uip_ipaddr_t*) &addr6.s6_addr);
 //	  }
 #else
-      addr.s_addr = inet_addr("10.10.10.10");   //prefer ipv4 default for legacy compatibility
+      addr.s_addr = inet_addr("10.1.10.10");   //prefer ipv4 default for legacy compatibility
 //    uiplib_ipaddrconv("aaaa::1",(uip_ipaddr_t*) &addr6.s6_addr);
 #endif
 
@@ -587,7 +595,6 @@ wpcap_poll(void)
 {
   struct pcap_pkthdr *packet_header;
   unsigned char *packet;
-
   switch(pcap_next_ex(pcap, &packet_header, &packet)) {
   case -1:
     error_exit("error on poll\n");
@@ -659,6 +666,11 @@ wfall_poll(void)
     return 0;
   }
 #if UIP_CONF_IPV6
+#if FALLBACK_HAS_ETHERNET_HEADERS
+#define ETHERNET_LLADDR_LEN 6
+#else
+#define ETHERNET_LLADDR_LEN UIP_LLADDR_LEN
+#endif
 /* Since pcap_setdirection(PCAP_D_IN) is not implemented in winpcap all outgoing packets
  * will be echoed back. The stack will ignore any packets not addressed to it, but initial
  * ipv6 neighbor solicitations are addressed to everyone and the echoed NS sent on startup
@@ -666,10 +678,13 @@ wfall_poll(void)
  * So discard all packets with our source address (packet starts destaddr, srcaddr, ...)
  *
  */
-  int i;
-  for (i=0;i<UIP_LLADDR_LEN;i++) if (*(packet+UIP_LLADDR_LEN+i)!=uip_lladdr.addr[i]) break;
-  if (i==UIP_LLADDR_LEN) {
-    PRINTF("Discarding echoed packet\n");
+   int i;
+//   for (i=0;i<ETHERNET_LLADDR_LEN;i++) printf("%02x ",*(packet+ETHERNET_LLADDR_LEN+i));printf("\n");
+ //  for (i=0;i<ETHERNET_LLADDR_LEN;i++) printf("%02x ",uip_lladdr.addr[i]);printf("\n");
+	
+  for (i=0;i<ETHERNET_LLADDR_LEN;i++) if (*(packet+ETHERNET_LLADDR_LEN+i)!=uip_lladdr.addr[i]) break;
+  if (i==ETHERNET_LLADDR_LEN) {
+    PRINTF("FIN: Discarding echoed packet\n");
     return 0;
   }
 #endif /* UIP_CONF_IPV6 */
@@ -727,7 +742,14 @@ return 0;
 u8_t
 wfall_send(uip_lladdr_t *lladdr)
 {
+#if FALLBACK_HAS_ETHERNET_HEADERS
+	//make room for ethernet header
+//{int i;printf("\n");for (i=0;i<uip_len;i++) printf("%02x ",*(char*)(uip_buf+i));printf("\n");}
+{int i;for(i=uip_len;i>=0;--i) *(char *)(uip_buf+i+14) = *(char *)(uip_buf+i);}
+//{int i;printf("\n");for (i=0;i<uip_len;i++) printf("%02x ",*(char*)(uip_buf+i));printf("\n");}
+#endif
   if(lladdr == NULL) {
+#if 0
 /* the dest must be multicast*/
     (&BUF->dest)->addr[0] = 0x33;
     (&BUF->dest)->addr[1] = 0x33;
@@ -735,6 +757,14 @@ wfall_send(uip_lladdr_t *lladdr)
     (&BUF->dest)->addr[3] = IPBUF->destipaddr.u8[13];
     (&BUF->dest)->addr[4] = IPBUF->destipaddr.u8[14];
     (&BUF->dest)->addr[5] = IPBUF->destipaddr.u8[15];
+#else
+	(&BUF->dest)->addr[0] = 0x02;
+    (&BUF->dest)->addr[1] = 0x00;
+    (&BUF->dest)->addr[2] = 0x4c;
+    (&BUF->dest)->addr[3] = 0x4f;
+    (&BUF->dest)->addr[4] = 0x4f;
+    (&BUF->dest)->addr[5] = 0x50;
+#endif
   } else {
     memcpy(&BUF->dest, lladdr, UIP_LLADDR_LEN);
   }

@@ -168,7 +168,7 @@ void uart1_putc(char c);
  * initiated at that FIFO level.
  * Set to 32 for no flow control or RAM buffer.
  */
-#define UART1_RX_BUFFERSIZE 128
+#define UART1_RX_BUFFERSIZE 512
 #if UART1_RX_BUFFERSIZE > 32
 extern volatile uint32_t  u1_rx_head, u1_rx_tail;
 #define uart1_can_get() ((u1_rx_head!=u1_rx_tail) || (*UART1_URXCON > 0))

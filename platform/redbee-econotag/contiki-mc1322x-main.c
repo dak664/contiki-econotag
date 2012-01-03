@@ -199,8 +199,8 @@ init_lowlevel(void)
 	trim_xtal();
 	
 	/* uart init */
-	uart1_init(BRINC, BRMOD, SAMP);
-	uart2_init(BRINC, BRMOD, SAMP);
+	uart1_init(767 , BRMOD, UCON_SAMP_8X);
+	uart2_init(767 , BRMOD, UCON_SAMP_8X);
 	
 	default_vreg_init();
 
@@ -212,6 +212,7 @@ init_lowlevel(void)
 	enable_irq(CRM);
 
 #if USE_32KHZ_XTAL
+bomb
 	enable_32khz_xtal();
 #else
 	cal_ring_osc();

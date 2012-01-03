@@ -61,7 +61,7 @@ u16_t slip_rubbish, slip_twopackets, slip_overflow, slip_ip_drop;
 #endif
 
 /* Must be at least one byte larger than UIP_BUFSIZE! */
-#define RX_BUFSIZE (UIP_BUFSIZE - UIP_LLH_LEN + 16)
+#define RX_BUFSIZE (2*UIP_BUFSIZE - UIP_LLH_LEN + 16)
 
 enum {
   STATE_TWOPACKETS = 0,	/* We have 2 packets and drop incoming data. */
@@ -113,7 +113,8 @@ slip_send(void)
       ptr = (u8_t *)uip_appdata;
     }   
     if(!ptr) { 
-	    printf("bug! ptr 0 in slip_send\n\r");
+	//    printf("bug! ptr 0 in slip_send\n\r");
+		//	    printf("b");
         break; 
     } 
     c = *ptr++;
@@ -224,29 +225,34 @@ slip_poll_handler(u8_t *outbuf, u16_t blen)
     if(begin < pkt_end) {
       len = pkt_end - begin;
       if(len > blen) {
-	len = 0;
+	   printf("bail1\n");
+	   len = 0;
       } else {
 	      u16_t i;
-	      printf("memcpy (%d):", len);
+//printf("\nmemcpy %u",len);
 	memcpy(outbuf, &rxbuf[begin], len);
+#if 0
 	for (i = 0; i < len; i++) {
 		printf("%02x ", outbuf[i]);
 	}
+#endif
       }
     } else {
       len = (RX_BUFSIZE - begin) + (pkt_end - 0);
       if(len > blen) {
-	len = 0;
+	  	  printf("bail2\n");
+		len = 0;
       } else {
-	unsigned i;
-	for(i = begin; i < RX_BUFSIZE; i++) {
-	  *outbuf++ = rxbuf[i];
-	  printf("X%02x ", rxbuf[i]);
-	}
-	for(i = 0; i < pkt_end; i++) {
-	  *outbuf++ = rxbuf[i];
-	  printf("P%02x ", rxbuf[i]);
-	}
+	printf("\nslip buffer wrap");
+		unsigned i;
+		for(i = begin; i < RX_BUFSIZE; i++) {
+		  *outbuf++ = rxbuf[i];
+		  printf("%02x ", rxbuf[i]);
+	    }
+	    for(i = 0; i < pkt_end; i++) {
+		   *outbuf++ = rxbuf[i];
+		   printf("%02x ", rxbuf[i]);
+	    }
       }
     }
 
@@ -272,6 +278,7 @@ PROCESS_THREAD(slip_process, ev, data)
   rxbuf_init();
 
   while(1) {
+ // 				printf("slip_process: wait, ip_len %u\n",uip_len);
     PROCESS_YIELD_UNTIL(ev == PROCESS_EVENT_POLL);
     
     slip_active = 1;
@@ -279,6 +286,7 @@ PROCESS_THREAD(slip_process, ev, data)
     /* Move packet from rxbuf to buffer provided by uIP. */
     uip_len = slip_poll_handler(&uip_buf[UIP_LLH_LEN],
 				UIP_BUFSIZE - UIP_LLH_LEN);
+//				printf("slip_process: uip_len %u\n",uip_len);
 
 //#if !UIP_CONF_IPV6
 #if 0
@@ -321,7 +329,8 @@ PROCESS_THREAD(slip_process, ev, data)
         input_callback();
       }
 #ifdef SLIP_CONF_TCPIP_INPUT
-//      printf("rx packet from slip\n\r");
+void slip_mac_input(void);
+  //    printf("rx packet from slip\n\r");
       SLIP_CONF_TCPIP_INPUT();
 #else
       tcpip_input();
@@ -394,12 +403,13 @@ slip_input_byte(unsigned char c)
       next = 0;
     }
     if(next == begin) {		/* rxbuf is full */
+	printf("slip overflow\n");
       state = STATE_RUBBISH;
       SLIP_STATISTICS(slip_overflow++);
       end = pkt_end;		/* remove rubbish */
       return 0;
     }
-    printf("B%02x ",c);
+ //   printf("B%02x ",c);
     rxbuf[end] = c;
     end = next;
   }

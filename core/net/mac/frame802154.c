@@ -65,6 +65,7 @@
 #include "sys/cc.h"
 #include "net/mac/frame802154.h"
 #include <string.h>
+#include <stdio.h>
 
 /**
  *  \brief Structure that contains the lengths of the various addressing and security fields
@@ -261,6 +262,7 @@ frame802154_parse(uint8_t *data, uint8_t len, frame802154_t *pf)
   }
 
   p = data;
+ // printf("parse frame, fcf = %02x %02x %02x\n",p[0],p[1],p[2]);
 
   /* decode the FCF */
   fcf.frame_type = p[0] & 7;
@@ -280,6 +282,7 @@ frame802154_parse(uint8_t *data, uint8_t len, frame802154_t *pf)
 
   /* Destination address, if any */
   if(fcf.dest_addr_mode) {
+  printf("a");
     /* Destination PAN */
     pf->dest_pid = p[0] + (p[1] << 8);
     p += 2;
@@ -291,6 +294,7 @@ frame802154_parse(uint8_t *data, uint8_t len, frame802154_t *pf)
 /*     } */
 /*     p += l; */
     if(fcf.dest_addr_mode == FRAME802154_SHORTADDRMODE) {
+	  printf("b");
       rimeaddr_copy((rimeaddr_t *)&(pf->dest_addr), &rimeaddr_null);
       pf->dest_addr[0] = p[1];
       pf->dest_addr[1] = p[0];
@@ -299,9 +303,11 @@ frame802154_parse(uint8_t *data, uint8_t len, frame802154_t *pf)
       for(c = 0; c < 8; c++) {
         pf->dest_addr[c] = p[7 - c];
       }
+	    printf("c");
       p += 8;
     }
   } else {
+    printf("d");
     rimeaddr_copy((rimeaddr_t *)&(pf->dest_addr), &rimeaddr_null);
     pf->dest_pid = 0;
   }
@@ -336,6 +342,7 @@ frame802154_parse(uint8_t *data, uint8_t len, frame802154_t *pf)
   } else {
     rimeaddr_copy((rimeaddr_t *)&(pf->src_addr), &rimeaddr_null);
     pf->src_pid = 0;
+	  printf("z");
   }
 
   if(fcf.security_enabled) {
@@ -347,6 +354,7 @@ frame802154_parse(uint8_t *data, uint8_t len, frame802154_t *pf)
   c = p - data;
   /* payload length */
   pf->payload_len = len - c;
+  printf("\nheader %u ,payload length %u",c,pf->payload_len);
   /* payload */
   pf->payload = p;
 
